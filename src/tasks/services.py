@@ -494,250 +494,107 @@ def list_attachments_for_task(task_id, requesting_user_context):
 # This service maps to "Internal Task Management Module" and parts of "Content Collaboration & Workflow".
 # It will be one of the most complex services in Phase 1.
 
-# --- Content Workflow Specific Functions ---
+# --- Content Workflow Specific Functions (Refactored for ContentAsset) ---
 
-def upload_raw_content(task_id, user_id, raw_content_link, script_brief_link=None, requesting_user_context=None):
+def create_content_asset(task_id, user_id, asset_type, name=None, raw_content_link=None, script_brief_link=None, assignee_id=None, reviewer_id=None, requesting_user_context=None):
     """
-    Updates a task with links to raw content and script/brief.
-    Sets content_status to "RawUploaded".
-    Typically performed by a Videographer or content uploader.
+    Creates a new content asset associated with a task.
+    Typically called when initiating a new piece of content for a task.
+    """
+    # 1. Fetch parent task to ensure it exists.
+    # 2. Permission check: Can user_id create content assets for this task_id?
+    # 3. Create ContentAsset object with initial values (e.g., content_status="NotStarted", version=1).
+    # 4. Save ContentAsset object (to _MOCK_CONTENT_ASSET_DB).
+    # 5. Return new ContentAsset object.
+    # This function now takes over some responsibility from the old upload_raw_content,
+    # focusing on creating the asset record. Uploading links might be a subsequent update to this asset.
+    print(f"Conceptual: create_content_asset for task {task_id}, type {asset_type} by user {user_id}")
+    # ... (To be implemented with mock DB interactions for ContentAsset)
+    pass
 
+def update_content_asset_links(content_asset_id, user_id, raw_link=None, script_link=None, edited_link=None, requesting_user_context=None):
+    """
+    Updates links for a specific content asset. Could set content_status to 'RawUploaded' or 'EditingInProgress'.
+    """
+    # 1. Fetch ContentAsset by content_asset_id.
+    # 2. Permission check.
+    # 3. Update link fields.
+    # 4. Update content_status (e.g., to "RawUploaded" if raw_link is provided).
+    # 5. Increment version if it's a new version of raw/edited content.
+    # 6. Save ContentAsset.
+    # 7. Notify relevant parties (e.g., assigned editor if raw content uploaded).
+    print(f"Conceptual: update_content_asset_links for asset {content_asset_id}")
+    pass
+
+
+def submit_content_asset_for_review(content_asset_id, user_id, edited_content_link, requesting_user_context=None):
+    """
+    Submits a specific content asset for review.
+    Updates the asset's status to "PendingReview" and notifies its designated reviewer.
     Args:
-        task_id (int): The ID of the task to update.
-        user_id (int): The ID of the user performing the upload.
-        raw_content_link (str): URL to the raw content.
-        script_brief_link (str, optional): URL to the script or brief.
-        requesting_user_context (any, optional): Context of the user making the request,
-                                                 for permission and tenancy checks.
-
-    Returns:
-        dict: A dictionary representing the updated task, or None if not found/permitted.
-              (Conceptual: actual return type would be Task object)
-
-    Raises:
-        PermissionError: If the user does not have permission.
-        ValueError: If task_id is invalid or task not found.
+        content_asset_id (int): The ID of the content asset.
+        user_id (int): The ID of the user submitting for review (e.g., an Editor).
+        edited_content_link (str): URL to the edited content for this asset.
     """
-    # Conceptual: These would interact with a real database and ORM
-    # from .models import Task # Assuming Task model is defined
-    # from ..core.auth import _check_permission # Conceptual permission check
-    # from ..core.notifications import _notify_user # Conceptual notification
-    # from .db_mocks import _get_task_from_db, _save_task_to_db # Using mocks for now
+    # 1. Fetch ContentAsset by content_asset_id.
+    # 2. Permission check (e.g., user_id is assignee of the ContentAsset).
+    # 3. Ensure ContentAsset has a reviewer_id.
+    # 4. Update ContentAsset's current_content_link = edited_content_link.
+    # 5. Set ContentAsset's content_status = "PendingReview".
+    # 6. Save ContentAsset.
+    # 7. Notify the ContentAsset's reviewer_id.
+    print(f"Conceptual: submit_content_asset_for_review for asset {content_asset_id}")
+    # Old logic for task:
+    # task = _get_task_from_db(task_id) ...
+    # task['edited_content_link'] = edited_content_link
+    # task['content_status'] = "PendingReview" ...
+    # _notify_user(task['reviewer_id'], ...)
+    pass
 
-    task = _get_task_from_db(task_id) # Simulate fetching task
-    if not task:
-        raise ValueError(f"Task with ID {task_id} not found.")
-
-    # Conceptual Permission Check:
-    # User performing the action would be derived from `requesting_user_context` or `user_id`.
-    # For this example, let's assume `user_id` is authoritative for now.
-    if not _check_permission(user_id, "upload_raw_content", task):
-        # In a real app, this would raise a specific exception like PermissionDeniedError
-        print(f"User {user_id} does not have permission to upload raw content for task {task_id}.")
-        raise PermissionError(f"User {user_id} cannot upload raw content for task {task_id}.")
-
-    task['raw_content_link'] = raw_content_link
-    if script_brief_link:
-        task['script_brief_link'] = script_brief_link
-
-    task['content_status'] = "RawUploaded"
-    task['content_version'] = (task.get('content_version', 0) or 0) + 1 # Ensure it's at least 1
-
-    _save_task_to_db(task) # Simulate saving the task
-
-    # Conceptual Notification:
-    if task.get('assignee_id'): # If an editor/next person is assigned
-        _notify_user(
-            task['assignee_id'],
-            f"Raw content has been uploaded for task '{task.get('title', task_id)}'. It is ready for editing."
-        )
-
-    print(f"Raw content uploaded for task {task_id}. Status: {task['content_status']}, Version: {task['content_version']}")
-    return task
-
-def submit_for_review(task_id, user_id, edited_content_link, requesting_user_context=None):
+def approve_content_asset(content_asset_id, reviewer_id, requesting_user_context=None):
     """
-    Submits edited content for review.
-    Updates task with the edited content link and sets content_status to "PendingReview".
-    Notifies the designated reviewer.
-    Typically performed by an Editor or the person responsible for editing.
-
+    Approves a specific content asset.
+    Sets the asset's content_status to "Approved".
     Args:
-        task_id (int): The ID of the task.
-        user_id (int): The ID of the user submitting for review.
-        edited_content_link (str): URL to the edited content.
-        requesting_user_context (any, optional): User context for permissions.
-
-    Returns:
-        dict: The updated task object (conceptual).
-
-    Raises:
-        ValueError: If task not found, reviewer not assigned, or edited_content_link is missing.
-        PermissionError: If user lacks permission.
+        content_asset_id (int): The ID of the content asset.
+        reviewer_id (int): The ID of the user approving (must match asset's reviewer_id).
     """
-    task = _get_task_from_db(task_id)
-    if not task:
-        raise ValueError(f"Task with ID {task_id} not found.")
+    # 1. Fetch ContentAsset by content_asset_id.
+    # 2. Permission check (reviewer_id matches ContentAsset.reviewer_id).
+    # 3. Ensure ContentAsset.content_status is "PendingReview".
+    # 4. Set ContentAsset.content_status = "Approved".
+    # 5. Save ContentAsset.
+    # 6. Notify relevant parties (asset assignee, task reporter, etc.).
+    # 7. Conceptual: Trigger AI transcription for this asset's approved link.
+    print(f"Conceptual: approve_content_asset for asset {content_asset_id}")
+    pass
 
-    # Conceptual Permission Check:
-    # User submitting should typically be the current assignee (e.g., Editor).
-    if not _check_permission(user_id, "submit_for_review", task):
-        # This permission might check if user_id == task.get('assignee_id')
-        print(f"User {user_id} does not have permission to submit content for review for task {task_id}.")
-        raise PermissionError(f"User {user_id} cannot submit content for review for task {task_id}.")
-
-    if not task.get("reviewer_id"):
-        raise ValueError(f"Task {task_id} does not have a designated reviewer_id. Cannot submit for review.")
-
-    if not edited_content_link:
-        raise ValueError("edited_content_link must be provided when submitting for review.")
-
-    task['edited_content_link'] = edited_content_link
-    task['content_status'] = "PendingReview"
-    # Version was already incremented during upload_raw_content or a previous edit cycle.
-    # If each submission for review is a new version, then increment here.
-    # For now, let's assume version increments on new raw upload or when changes are requested and re-submitted.
-    # So, we might not always increment version here, or it's handled by a separate "upload new version" action.
-    # Let's assume for now, a submission for review is on the current version.
-    # If a new version is implied by submitting for review:
-    # task['content_version'] = (task.get('content_version', 0) or 0) + 1
-
-    _save_task_to_db(task)
-
-    # Conceptual Notification:
-    _notify_user(
-        task['reviewer_id'],
-        f"Content for task '{task.get('title', task_id)}' (Version {task.get('content_version', 'N/A')}) is ready for your review. Link: {task['edited_content_link']}"
-    )
-
-    print(f"Content for task {task_id} submitted for review. Status: {task['content_status']}")
-    return task
-
-def approve_content(task_id, reviewer_id, requesting_user_context=None):
+def request_changes_on_content_asset(content_asset_id, reviewer_id, feedback_comment_text, requesting_user_context=None):
     """
-    Approves the content for a task.
-    Sets content_status to "Approved".
-    Typically performed by the user set as task.reviewer_id.
+    Requests changes on a specific content asset.
+    Sets the asset's content_status to "ChangesRequested" and adds feedback.
+    Args:
+        content_asset_id (int): The ID of the content asset.
+        reviewer_id (int): The ID of the user requesting changes.
+        feedback_comment_text (str): The feedback.
     """
-    # 1. Get task by task_id. Verify user (reviewer_id or from requesting_user_context) is the designated reviewer
-    #    and has permission to approve.
-    # 2. Set task.content_status = "Approved".
-    # 3. Optionally, update overall task.status (e.g., to "Completed" or a specific "ContentApproved" status).
-    # 4. Save task.
-    # 5. Notify relevant parties (e.g., original reporter, assignee, Social Media Manager).
-    # 6. Placeholder: Trigger next step in workflow (e.g., call ai_services.transcribe_video(task.edited_content_link) - Phase 4).
+    # 1. Fetch ContentAsset by content_asset_id.
+    # 2. Permission check (reviewer_id matches ContentAsset.reviewer_id).
+    # 3. Ensure ContentAsset.content_status is "PendingReview".
+    # 4. Set ContentAsset.content_status = "ChangesRequested".
+    # 5. Update ContentAsset.last_feedback_summary.
+    # 6. Conceptually add feedback_comment_text as a comment linked to the ContentAsset (or Task).
+    #    (This might need a new add_comment_to_content_asset function or refinement of add_comment_to_task)
+    # 7. Save ContentAsset.
+    # 8. Notify the ContentAsset's assignee.
+    print(f"Conceptual: request_changes_on_content_asset for asset {content_asset_id}")
+    pass
 
-    task = _get_task_from_db(task_id)
-    if not task:
-        raise ValueError(f"Task with ID {task_id} not found.")
-
-    # User performing the action is `reviewer_id` param for this function.
-    # Conceptual Permission Check:
-    # Check if the provided `reviewer_id` matches the `task['reviewer_id']`
-    # and if they have the "approve_content" permission.
-    if task.get("reviewer_id") != reviewer_id:
-        print(f"User {reviewer_id} is not the designated reviewer for task {task_id} (actual: {task.get('reviewer_id')}).")
-        raise PermissionError(f"User {reviewer_id} is not the designated reviewer for task {task_id}.")
-
-    if not _check_permission(reviewer_id, "approve_content", task):
-        print(f"User {reviewer_id} does not have permission to approve content for task {task_id}.")
-        raise PermissionError(f"User {reviewer_id} cannot approve content for task {task_id}.")
-
-    # Workflow Logic: Ensure content is in a state that can be approved.
-    if task.get('content_status') != "PendingReview":
-        raise ValueError(f"Task {task_id} content is in status '{task.get('content_status')}', cannot approve. Expected 'PendingReview'.")
-
-    task['content_status'] = "Approved"
-    # Optionally, update overall task status if this approval means the task is done.
-    # task['status'] = "Completed"
-
-    _save_task_to_db(task)
-
-    # Conceptual Notifications:
-    # Notify original reporter
-    if task.get('reporter_id'):
-        _notify_user(
-            task['reporter_id'],
-            f"Content for task '{task.get('title', task_id)}' has been approved by user {reviewer_id}."
-        )
-    # Notify assignee (e.g., Editor who submitted it)
-    if task.get('assignee_id') and task.get('assignee_id') != reviewer_id : # Don't notify reviewer of their own action
-         _notify_user(
-            task['assignee_id'],
-            f"Your submitted content for task '{task.get('title', task_id)}' has been approved."
-        )
-    # Notify a Social Media Manager (conceptual - role/user lookup would be needed)
-    # social_media_manager_id = _get_user_by_role("SocialMediaManager", task.get('client_id'))
-    # if social_media_manager_id:
-    #    _notify_user(social_media_manager_id, f"Content approved for task '{task.get('title', task_id)}' and is ready for scheduling.")
-
-    print(f"Content for task {task_id} approved by user {reviewer_id}. Status: {task['content_status']}")
-
-    # Placeholder for Phase 4: AI Transcription
-    print(f"Conceptual: Trigger AI transcription for task {task_id}, link: {task.get('edited_content_link')}")
-    # if task.get('edited_content_link'):
-    #    ai_service.trigger_transcription(task['edited_content_link'], task_id) # Imaginary AI service call
-
-    return task
-
-def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requesting_user_context=None):
-    """
-    Requests changes on the submitted content.
-    Sets content_status to "ChangesRequested".
-    Adds feedback as a comment to the task.
-    Typically performed by the user set as task.reviewer_id.
-    """
-    # 1. Get task by task_id. Verify user (reviewer_id or from requesting_user_context) is the designated reviewer.
-    # 2. Set task.content_status = "ChangesRequested".
-    # 3. Store feedback_comment_text:
-    #    - Add as a new comment to the task using add_comment_to_task().
-    #    - Optionally, also update task.last_feedback_summary.
-    # 4. Save task.
-    # 5. Notify the assignee (e.g., the Editor) that changes are requested, including the feedback.
-
-    task = _get_task_from_db(task_id)
-    if not task:
-        raise ValueError(f"Task with ID {task_id} not found.")
-
-    # User performing the action is `reviewer_id` param for this function.
-    # Conceptual Permission Check:
-    if task.get("reviewer_id") != reviewer_id:
-        print(f"User {reviewer_id} is not the designated reviewer for task {task_id} (actual: {task.get('reviewer_id')}).")
-        raise PermissionError(f"User {reviewer_id} is not the designated reviewer for task {task_id}.")
-
-    if not _check_permission(reviewer_id, "request_changes_on_content", task):
-        print(f"User {reviewer_id} does not have permission to request changes for task {task_id}.")
-        raise PermissionError(f"User {reviewer_id} cannot request changes for task {task_id}.")
-
-    # Workflow Logic: Ensure content is in a state where changes can be requested.
-    if task.get('content_status') != "PendingReview":
-        raise ValueError(f"Task {task_id} content is in status '{task.get('content_status')}', cannot request changes. Expected 'PendingReview'.")
-
-    if not feedback_comment_text or not feedback_comment_text.strip():
-        raise ValueError("Feedback comment text must be provided when requesting changes.")
-
-    task['content_status'] = "ChangesRequested"
-    task['last_feedback_summary'] = feedback_comment_text[:255] # Store a summary
-
-    # Conceptually add the full feedback as a comment using the existing placeholder function
-    # In a real scenario, add_comment_to_task would also need proper implementation.
-    # For now, we just call it conceptually.
-    print(f"Conceptual: Calling add_comment_to_task({task_id}, {reviewer_id}, '{feedback_comment_text}')")
-    # add_comment_to_task(task_id, reviewer_id, feedback_comment_text, requesting_user_context)
-    # Since add_comment_to_task is a placeholder, we'll just simulate its effect for now.
-    # If it were real, it would create a new Comment record.
-
-    _save_task_to_db(task)
-
-    # Conceptual Notification to the assignee (e.g., Editor)
-    if task.get('assignee_id'):
-        _notify_user(
-            task['assignee_id'],
-            f"Changes have been requested by user {reviewer_id} for task '{task.get('title', task_id)}'. Feedback: {feedback_comment_text}"
-        )
-
-    print(f"Changes requested for task {task_id} by user {reviewer_id}. Status: {task['content_status']}")
-    return task
+# Note: The original upload_raw_content, submit_for_review, approve_content,
+# and request_changes_on_content functions that operated directly on Task fields
+# are now superseded by the ContentAsset-focused versions above.
+# They can be removed or heavily refactored if a Task can also have a *single* primary content flow
+# in addition to multiple ContentAssets. For now, assume all content flows via ContentAssets.
 
 # Note: `requesting_user_context` is added to these functions for consistency,
 # allowing a central place (e.g., a decorator or middleware) to extract user_id
@@ -745,15 +602,45 @@ def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requ
 # The actual implementation will depend on the chosen web framework and authentication system.
 
 # --- Mock/Conceptual Helper Functions (for illustration purposes) ---
+
+_MOCK_CONTENT_ASSET_DB = []
+_NEXT_CONTENT_ASSET_ID = 1
+
+def _get_next_content_asset_id():
+    global _NEXT_CONTENT_ASSET_ID
+    new_id = _NEXT_CONTENT_ASSET_ID
+    _NEXT_CONTENT_ASSET_ID += 1
+    return new_id
+
+def _get_content_asset_from_db(asset_id):
+    """Conceptual: Fetches a content asset by ID from the mock database."""
+    for asset in _MOCK_CONTENT_ASSET_DB:
+        if asset['id'] == asset_id:
+            return asset
+    return None
+
+def _save_content_asset_to_db(asset_object):
+    """Conceptual: 'Saves' a content asset to the mock database (updates if exists, else appends)."""
+    for i, asset in enumerate(_MOCK_CONTENT_ASSET_DB):
+        if asset['id'] == asset_object['id']:
+            _MOCK_CONTENT_ASSET_DB[i] = asset_object
+            print(f"MockContentAssetDB: Asset {asset_object['id']} updated: {asset_object}")
+            return
+    _MOCK_CONTENT_ASSET_DB.append(asset_object)
+    print(f"MockContentAssetDB: Asset {asset_object['id']} added: {asset_object}")
+
+
 # In a real application, these would be replaced by actual database interactions,
 # authentication/authorization services, and notification systems.
 
 # Conceptual database (in-memory list for mocking)
+# Note: Direct content fields (content_status, raw_content_link, etc.) are removed from tasks.
+# These are now managed in _MOCK_CONTENT_ASSET_DB, linked by task_id.
 _MOCK_TASK_DB = [
-    {"id": 1, "title": "Video Project Alpha", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "reviewer_id": 102, "status": "In Progress", "priority": "High", "content_status": "RawUploaded", "content_version": 1, "raw_content_link": "link1", "edited_content_link": None, "last_feedback_summary": None, "comments": [], "attachments": []},
-    {"id": 2, "title": "Blog Post Beta", "client_id": 20, "assignee_id": 103, "reporter_id": 202, "reviewer_id": 101, "status": "To-Do", "priority": "Medium", "content_status": "NotStarted", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None, "comments": [], "attachments": []},
-    {"id": 3, "title": "Client Presentation Gamma", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "reviewer_id": 102, "status": "In Progress", "priority": "High", "content_status": "PendingReview", "content_version": 1, "raw_content_link": "link_raw_gamma", "edited_content_link": "link_edited_gamma_v1", "last_feedback_summary": None, "comments": [], "attachments": []},
-    {"id": 4, "title": "Internal KB Update", "client_id": None, "assignee_id": 102, "reporter_id": 201, "reviewer_id": None, "status": "To-Do", "priority": "Low", "content_status": "NotApplicable", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None, "comments": [], "attachments": []},
+    {"id": 1, "title": "Video Project Alpha", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "status": "In Progress", "priority": "High", "comments": [], "attachments": []}, # reviewer_id removed from task, now per-asset
+    {"id": 2, "title": "Blog Post Beta", "client_id": 20, "assignee_id": 103, "reporter_id": 202, "status": "To-Do", "priority": "Medium", "comments": [], "attachments": []},
+    {"id": 3, "title": "Client Presentation Gamma", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "status": "In Progress", "priority": "High", "comments": [], "attachments": []},
+    {"id": 4, "title": "Internal KB Update", "client_id": None, "assignee_id": 102, "reporter_id": 201, "status": "To-Do", "priority": "Low", "comments": [], "attachments": []}, # No content workflow applicable here
 ]
 
 def _get_task_from_db(task_id):

@@ -18,32 +18,63 @@ class Task:
     # # Relationships
     # client_id: int (Foreign Key to Client model, Nullable) - Associates task with a specific client project.
     #                                                        - Null for internal agency tasks.
-    # assignee_id: int (Foreign Key to User model, Nullable) - User responsible for the current phase of the task.
+    # assignee_id: int (Foreign Key to User model, Nullable) - User primarily responsible for the overall task. Specific content assets can have their own assignees.
     # reporter_id: int (Foreign Key to User model) - User who created or reported the task.
     # project_id: int (Foreign Key to Project model, Nullable) - If tasks are grouped into larger projects.
-    # reviewer_id: int (Foreign Key to User model, Nullable) - User designated to review/approve the content.
+    # # reviewer_id: int (Foreign Key to User model, Nullable) - This is now moved to ContentAsset. A task might have an overall "approver" or "manager" if needed, but content review is per-asset.
     #
-    # # Content Workflow Specific Fields
-    # # This section details fields specifically for tasks that involve a content creation/approval lifecycle.
-    # content_status: str (Optional, e.g., "NotStarted", "RawUploaded", "EditingInProgress", "PendingReview", "ChangesRequested", "Approved")
-    #   - This status is specific to the content lifecycle within the task.
-    #   - It can work alongside the overall task `status`. For example, a task `status` could be "In Progress"
-    #     while `content_status` moves from "RawUploaded" to "EditingInProgress".
-    # raw_content_link: str (Optional, URL to raw footage/assets, e.g., Google Drive link)
-    # script_brief_link: str (Optional, URL to script, brief, or supporting documents)
-    # edited_content_link: str (Optional, URL to the edited version of the content ready for review)
-    # content_version: int (Optional, simple version counter, e.g., 1, 2, for revisions)
-    # last_feedback_summary: str (Optional, stores key feedback points from the last review cycle)
-    #
-    # # Note on version_history:
-    # # A more complex `version_history` (e.g., JSON field or a separate ContentVersion model)
-    # # could store an array of objects, each with {version, link, submitted_at, reviewer_feedback, reviewed_at}.
-    # # For MVP, `content_version` and `last_feedback_summary` along with task comments might suffice.
+    # # Content Workflow Specific Fields have been moved to ContentAsset model.
+    # # The Task model now focuses on the overall deliverable or project stage.
+    # # Individual content pieces (videos, blogs, graphics) associated with this task
+    # # are managed as ContentAsset records linked to this task_id.
     #
     # # Attachments & Comments (likely separate models with Many-to-One relationship to Task)
-    # # attachments: list[Attachment] # General task attachments
-    # # comments: list[Comment]
+    # # attachments: list[Attachment] # General task attachments (e.g., meeting notes, overall brief not tied to one asset)
+    # # comments: list[Comment] # General task comments
+    # # content_assets: list[ContentAsset] (One-to-Many relationship: A task can have multiple content assets)
     pass
+
+
+class ContentAsset:
+    """
+    Represents a single piece of content (e.g., a video, a blog post, an image) associated with a Task.
+    Each asset can have its own workflow, links, and versions.
+    """
+    # id: int (Primary Key)
+    # task_id: int (Foreign Key to Task model, identifying which task this asset belongs to)
+    # name: str (Optional, user-defined name for this asset, e.g., "Intro Video - Draft 1", "Hero Image for Social")
+    # asset_type: str (e.g., "video", "blog_post", "social_graphic", "script", "brief", "raw_footage")
+    #   - Helps in categorizing and potentially handling different asset types differently.
+    #
+    # # Workflow and Versioning for this specific asset
+    # content_status: str (e.g., "NotStarted", "RawUploaded", "EditingInProgress", "PendingReview", "ChangesRequested", "Approved", "Archived")
+    #   - Status specific to this asset's lifecycle.
+    # version_number: int (e.g., 1, 2, 3 - for iterative versions of this asset)
+    #
+    # # Links to actual content (typically external URLs, e.g., Google Drive)
+    # raw_content_link: str (Optional, URL to raw materials if applicable for this asset type)
+    # source_document_link: str (Optional, URL to a script, brief, or source text this asset is based on)
+    # current_content_link: str (Optional, URL to the current version of the asset, e.g., edited video link, blog draft link)
+    # published_url: str (Optional, URL where the final content is published, if applicable)
+    #
+    # # People involved with this asset
+    # assignee_id: int (Foreign Key to User model, e.g., the editor currently working on this video asset)
+    # reviewer_id: int (Foreign Key to User model, e.g., the person designated to review this specific asset)
+    #
+    # # Feedback & History
+    # last_feedback_summary: str (Optional, summary of the latest review feedback for this asset)
+    # # For more detailed version history, a separate ContentAssetVersion model might be linked here,
+    # # or this ContentAsset itself could represent a specific version, with a parent_asset_id linking revisions.
+    # # For now, `version_number` and `current_content_link` manage this simply.
+    #
+    # # Timestamps
+    # created_at: datetime
+    # updated_at: datetime
+    # submitted_for_review_at: datetime (Optional)
+    # approved_at: datetime (Optional)
+    # published_at: datetime (Optional)
+    pass
+
 
 class Project: # Optional, if tasks need to be grouped beyond client association
     """
