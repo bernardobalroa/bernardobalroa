@@ -176,6 +176,35 @@ def get_task_by_id(task_id, requesting_user_context):
     print(f"Task {task_id} retrieved by user {current_user_id}.")
     return task
 
+
+def delete_task(task_id, requesting_user_context):
+    """
+    Deletes a task.
+    Requires specific permission, often limited to task reporter or managers/admins.
+    """
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found to delete.")
+
+    # Conceptual Permission Check:
+    # User needs 'delete_task' permission. This might be restricted to admins,
+    # or perhaps the reporter of the task if it's in an early stage.
+    if not _check_permission(current_user_id, "delete_task", task):
+        print(f"User {current_user_id} does not have permission to delete task {task_id}.")
+        raise PermissionError(f"User {current_user_id} cannot delete task {task_id}.")
+
+    # Mock Deletion Logic: Remove from the list
+    global _MOCK_TASK_DB
+    _MOCK_TASK_DB = [t for t in _MOCK_TASK_DB if t['id'] != task_id]
+
+    print(f"Task {task_id} deleted by user {current_user_id}.")
+    # In a real system, you might also delete associated comments, attachments, etc.,
+    # or handle them based on cascading rules or soft-delete policies.
+    return True
+
+
 def list_tasks(requesting_user_context, filters=None, sort_by=None, pagination=None):
     """
     Lists tasks based on user's permissions and provided filters.
@@ -361,6 +390,106 @@ def add_comment_to_task(task_id, user_id, text_content, requesting_user_context)
         )
 
     return new_comment # Return the conceptual comment object
+
+
+def list_comments_for_task(task_id, requesting_user_context):
+    """
+    Lists all comments for a given task.
+    Requires permission to view the task itself.
+    """
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # Conceptual Permission Check:
+    # If user can 'get_task', they can probably list its comments.
+    # Or a more specific 'list_comments' permission could be used.
+    permission_context = {
+        "task_id": task_id,
+        "assignee_id": task.get("assignee_id"),
+        "reporter_id": task.get("reporter_id"),
+        "reviewer_id": task.get("reviewer_id"),
+        "client_id": task.get("client_id")
+    }
+    if not _check_permission(current_user_id, "list_comments", permission_context): # Using "list_comments" or could reuse "get_task"
+        print(f"User {current_user_id} does not have permission to list comments for task {task_id}.")
+        raise PermissionError(f"User {current_user_id} cannot list comments for task {task_id}.")
+
+    comments = task.get("comments", [])
+    print(f"User {current_user_id} listed {len(comments)} comments for task {task_id}.")
+    return comments
+
+
+def add_attachment_to_task(task_id, user_id, file_url, file_name=None, attachment_type="link", requesting_user_context=None):
+    """
+    Adds an attachment (file link) to a task.
+    """
+    current_user_id = user_id # Assuming user_id is passed directly for who is adding.
+                              # requesting_user_context could be used for more complex auth.
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    if not _check_permission(current_user_id, "add_attachment", {"task_id": task_id}):
+        print(f"User {current_user_id} does not have permission to add attachments to task {task_id}.")
+        raise PermissionError(f"User {current_user_id} cannot add attachments to task {task_id}.")
+
+    if not file_url or not file_url.strip():
+        raise ValueError("File URL must be provided for attachment.")
+
+    mock_attachment_id = len(_MOCK_TASK_DB) + 2000 + len(task.get("attachments", [])) # semi-unique ID
+    new_attachment = {
+        'id': mock_attachment_id,
+        'task_id': task_id,
+        'user_id': current_user_id, # User who added the attachment
+        'file_url': file_url,
+        'file_name': file_name if file_name else file_url.split('/')[-1], # Basic name extraction
+        'attachment_type': attachment_type,
+        # 'uploaded_at': datetime.now() # Conceptual
+    }
+
+    if "attachments" not in task:
+        task["attachments"] = []
+    task["attachments"].append(new_attachment)
+    _save_task_to_db(task)
+
+    print(f"MockAttachment: User {current_user_id} added attachment to task {task_id}: '{new_attachment['file_name']}' (URL: {file_url})")
+
+    # Conceptual Notification (e.g., to task assignee or reporter)
+    # _notify_user(task.get('assignee_id'), f"New attachment '{new_attachment['file_name']}' added to task '{task.get('title', task_id)}'.")
+
+    return new_attachment
+
+
+def list_attachments_for_task(task_id, requesting_user_context):
+    """
+    Lists all attachments for a given task.
+    Requires permission to view the task itself.
+    """
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # Conceptual Permission Check:
+    # Similar to list_comments, if user can 'get_task', they can probably list its attachments.
+    permission_context = {
+        "task_id": task_id,
+        "client_id": task.get("client_id")
+        # Add other relevant context if needed for permission decisions
+    }
+    if not _check_permission(current_user_id, "list_attachments", permission_context): # Using "list_attachments" or could reuse "get_task"
+        print(f"User {current_user_id} does not have permission to list attachments for task {task_id}.")
+        raise PermissionError(f"User {current_user_id} cannot list attachments for task {task_id}.")
+
+    attachments = task.get("attachments", [])
+    print(f"User {current_user_id} listed {len(attachments)} attachments for task {task_id}.")
+    return attachments
+
 
 # This service maps to "Internal Task Management Module" and parts of "Content Collaboration & Workflow".
 # It will be one of the most complex services in Phase 1.
@@ -621,11 +750,10 @@ def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requ
 
 # Conceptual database (in-memory list for mocking)
 _MOCK_TASK_DB = [
-_MOCK_TASK_DB = [
-    {"id": 1, "title": "Video Project Alpha", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "reviewer_id": 102, "status": "In Progress", "priority": "High", "content_status": "RawUploaded", "content_version": 1, "raw_content_link": "link1", "edited_content_link": None, "last_feedback_summary": None, "comments": []},
-    {"id": 2, "title": "Blog Post Beta", "client_id": 20, "assignee_id": 103, "reporter_id": 202, "reviewer_id": 101, "status": "To-Do", "priority": "Medium", "content_status": "NotStarted", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None, "comments": []},
-    {"id": 3, "title": "Client Presentation Gamma", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "reviewer_id": 102, "status": "In Progress", "priority": "High", "content_status": "PendingReview", "content_version": 1, "raw_content_link": "link_raw_gamma", "edited_content_link": "link_edited_gamma_v1", "last_feedback_summary": None, "comments": []},
-    {"id": 4, "title": "Internal KB Update", "client_id": None, "assignee_id": 102, "reporter_id": 201, "reviewer_id": None, "status": "To-Do", "priority": "Low", "content_status": "NotApplicable", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None, "comments": []},
+    {"id": 1, "title": "Video Project Alpha", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "reviewer_id": 102, "status": "In Progress", "priority": "High", "content_status": "RawUploaded", "content_version": 1, "raw_content_link": "link1", "edited_content_link": None, "last_feedback_summary": None, "comments": [], "attachments": []},
+    {"id": 2, "title": "Blog Post Beta", "client_id": 20, "assignee_id": 103, "reporter_id": 202, "reviewer_id": 101, "status": "To-Do", "priority": "Medium", "content_status": "NotStarted", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None, "comments": [], "attachments": []},
+    {"id": 3, "title": "Client Presentation Gamma", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "reviewer_id": 102, "status": "In Progress", "priority": "High", "content_status": "PendingReview", "content_version": 1, "raw_content_link": "link_raw_gamma", "edited_content_link": "link_edited_gamma_v1", "last_feedback_summary": None, "comments": [], "attachments": []},
+    {"id": 4, "title": "Internal KB Update", "client_id": None, "assignee_id": 102, "reporter_id": 201, "reviewer_id": None, "status": "To-Do", "priority": "Low", "content_status": "NotApplicable", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None, "comments": [], "attachments": []},
 ]
 
 def _get_task_from_db(task_id):
@@ -715,6 +843,19 @@ def _check_permission(user_id, action, task_object):
         # Example: All authenticated users can list tasks, but the list will be pre-filtered by their client access.
         # task_object here is `{"filters_intended": filters}`.
         print(f"MockAuth: Allowing 'list_tasks' for user {user_id}.")
+        return True
+    elif action == "delete_task":
+        # Example: User might need to be reporter or manager/admin.
+        print(f"MockAuth: Allowing 'delete_task' for user {user_id} on task {task_object.get('id', 'Unknown')}.")
+        return True
+    elif action == "list_comments": # Could reuse 'get_task' permission logic
+        print(f"MockAuth: Allowing 'list_comments' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
+        return True
+    elif action == "add_attachment":
+        print(f"MockAuth: Allowing 'add_attachment' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
+        return True
+    elif action == "list_attachments": # Could reuse 'get_task' permission logic
+        print(f"MockAuth: Allowing 'list_attachments' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
         return True
 
     print(f"MockAuth: Defaulting to TRUE for action '{action}' for user {user_id} on task {task_object.get('id', 'Unknown') if isinstance(task_object, dict) else 'N/A'}.")
