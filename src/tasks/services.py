@@ -260,7 +260,59 @@ def approve_content(task_id, reviewer_id, requesting_user_context=None):
     # 4. Save task.
     # 5. Notify relevant parties (e.g., original reporter, assignee, Social Media Manager).
     # 6. Placeholder: Trigger next step in workflow (e.g., call ai_services.transcribe_video(task.edited_content_link) - Phase 4).
-    pass
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # User performing the action is `reviewer_id` param for this function.
+    # Conceptual Permission Check:
+    # Check if the provided `reviewer_id` matches the `task['reviewer_id']`
+    # and if they have the "approve_content" permission.
+    if task.get("reviewer_id") != reviewer_id:
+        print(f"User {reviewer_id} is not the designated reviewer for task {task_id} (actual: {task.get('reviewer_id')}).")
+        raise PermissionError(f"User {reviewer_id} is not the designated reviewer for task {task_id}.")
+
+    if not _check_permission(reviewer_id, "approve_content", task):
+        print(f"User {reviewer_id} does not have permission to approve content for task {task_id}.")
+        raise PermissionError(f"User {reviewer_id} cannot approve content for task {task_id}.")
+
+    # Workflow Logic: Ensure content is in a state that can be approved.
+    if task.get('content_status') != "PendingReview":
+        raise ValueError(f"Task {task_id} content is in status '{task.get('content_status')}', cannot approve. Expected 'PendingReview'.")
+
+    task['content_status'] = "Approved"
+    # Optionally, update overall task status if this approval means the task is done.
+    # task['status'] = "Completed"
+
+    _save_task_to_db(task)
+
+    # Conceptual Notifications:
+    # Notify original reporter
+    if task.get('reporter_id'):
+        _notify_user(
+            task['reporter_id'],
+            f"Content for task '{task.get('title', task_id)}' has been approved by user {reviewer_id}."
+        )
+    # Notify assignee (e.g., Editor who submitted it)
+    if task.get('assignee_id') and task.get('assignee_id') != reviewer_id : # Don't notify reviewer of their own action
+         _notify_user(
+            task['assignee_id'],
+            f"Your submitted content for task '{task.get('title', task_id)}' has been approved."
+        )
+    # Notify a Social Media Manager (conceptual - role/user lookup would be needed)
+    # social_media_manager_id = _get_user_by_role("SocialMediaManager", task.get('client_id'))
+    # if social_media_manager_id:
+    #    _notify_user(social_media_manager_id, f"Content approved for task '{task.get('title', task_id)}' and is ready for scheduling.")
+
+    print(f"Content for task {task_id} approved by user {reviewer_id}. Status: {task['content_status']}")
+
+    # Placeholder for Phase 4: AI Transcription
+    print(f"Conceptual: Trigger AI transcription for task {task_id}, link: {task.get('edited_content_link')}")
+    # if task.get('edited_content_link'):
+    #    ai_service.trigger_transcription(task['edited_content_link'], task_id) # Imaginary AI service call
+
+    return task
 
 def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requesting_user_context=None):
     """
@@ -276,7 +328,50 @@ def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requ
     #    - Optionally, also update task.last_feedback_summary.
     # 4. Save task.
     # 5. Notify the assignee (e.g., the Editor) that changes are requested, including the feedback.
-    pass
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # User performing the action is `reviewer_id` param for this function.
+    # Conceptual Permission Check:
+    if task.get("reviewer_id") != reviewer_id:
+        print(f"User {reviewer_id} is not the designated reviewer for task {task_id} (actual: {task.get('reviewer_id')}).")
+        raise PermissionError(f"User {reviewer_id} is not the designated reviewer for task {task_id}.")
+
+    if not _check_permission(reviewer_id, "request_changes_on_content", task):
+        print(f"User {reviewer_id} does not have permission to request changes for task {task_id}.")
+        raise PermissionError(f"User {reviewer_id} cannot request changes for task {task_id}.")
+
+    # Workflow Logic: Ensure content is in a state where changes can be requested.
+    if task.get('content_status') != "PendingReview":
+        raise ValueError(f"Task {task_id} content is in status '{task.get('content_status')}', cannot request changes. Expected 'PendingReview'.")
+
+    if not feedback_comment_text or not feedback_comment_text.strip():
+        raise ValueError("Feedback comment text must be provided when requesting changes.")
+
+    task['content_status'] = "ChangesRequested"
+    task['last_feedback_summary'] = feedback_comment_text[:255] # Store a summary
+
+    # Conceptually add the full feedback as a comment using the existing placeholder function
+    # In a real scenario, add_comment_to_task would also need proper implementation.
+    # For now, we just call it conceptually.
+    print(f"Conceptual: Calling add_comment_to_task({task_id}, {reviewer_id}, '{feedback_comment_text}')")
+    # add_comment_to_task(task_id, reviewer_id, feedback_comment_text, requesting_user_context)
+    # Since add_comment_to_task is a placeholder, we'll just simulate its effect for now.
+    # If it were real, it would create a new Comment record.
+
+    _save_task_to_db(task)
+
+    # Conceptual Notification to the assignee (e.g., Editor)
+    if task.get('assignee_id'):
+        _notify_user(
+            task['assignee_id'],
+            f"Changes have been requested by user {reviewer_id} for task '{task.get('title', task_id)}'. Feedback: {feedback_comment_text}"
+        )
+
+    print(f"Changes requested for task {task_id} by user {reviewer_id}. Status: {task['content_status']}")
+    return task
 
 # Note: `requesting_user_context` is added to these functions for consistency,
 # allowing a central place (e.g., a decorator or middleware) to extract user_id
@@ -289,8 +384,9 @@ def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requ
 
 # Conceptual database (in-memory list for mocking)
 _MOCK_TASK_DB = [
-    {"id": 1, "title": "Video Project Alpha", "assignee_id": 101, "reviewer_id": 102, "content_status": "NotStarted", "content_version": 0, "raw_content_link": None},
-    {"id": 2, "title": "Blog Post Beta", "assignee_id": 103, "reviewer_id": 101, "content_status": "NotStarted", "content_version": 0, "raw_content_link": None},
+    {"id": 1, "title": "Video Project Alpha", "assignee_id": 101, "reviewer_id": 102, "content_status": "NotStarted", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None},
+    {"id": 2, "title": "Blog Post Beta", "assignee_id": 103, "reviewer_id": 101, "content_status": "RawUploaded", "content_version": 1, "raw_content_link": "http://example.com/raw_blog", "edited_content_link": None, "last_feedback_summary": None},
+    {"id": 3, "title": "Client Presentation Gamma", "assignee_id": 101, "reviewer_id": 102, "content_status": "PendingReview", "content_version": 1, "raw_content_link": "http://example.com/raw_pres", "edited_content_link": "http://example.com/edited_pres_v1", "last_feedback_summary": None},
 ]
 
 def _get_task_from_db(task_id):
@@ -337,6 +433,22 @@ def _check_permission(user_id, action, task_object):
         #    return True
         # return False
         return True # Simplified for now
+    elif action in ["approve_content", "request_changes_on_content"]:
+        # Example: Only the designated reviewer_id for the task can perform these actions.
+        # A real check:
+        # if task_object and task_object.get('reviewer_id') == user_id:
+        #     return True
+        # return False
+        # For the mock, we also check if the user_id passed to _check_permission
+        # matches the task's reviewer_id, as the service functions already do this.
+        # So, this part of mock _check_permission is more about acknowledging the action string.
+        if task_object and task_object.get('reviewer_id') == user_id:
+             print(f"MockAuth: User {user_id} IS the designated reviewer for task {task_object.get('id')}.")
+             return True
+        # If the service function didn't pre-check, this mock would be more critical.
+        # For now, just acknowledging the action is enough.
+        return True # Simplified for now, assuming service function does primary check.
+
     return True # Default to allow for other actions in mock
 
 
