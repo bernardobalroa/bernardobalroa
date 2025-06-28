@@ -77,7 +77,63 @@ def create_task(reporter_id, title, description, client_id=None, assignee_id=Non
     # 5. If `assignee_id` is set, notify the assignee.
     # 6. Log creation.
     # 7. Return Task object or task_id.
-    pass
+
+    # Conceptual Permission Check for the reporter
+    if not _check_permission(reporter_id, "create_task", {"client_id": client_id}): # Pass client_id for context
+        print(f"User {reporter_id} does not have permission to create tasks (potentially for client {client_id}).")
+        raise PermissionError(f"User {reporter_id} cannot create tasks.")
+
+    # Basic validation
+    if not title:
+        raise ValueError("Task title cannot be empty.")
+
+    # Generate a new task ID (simple increment for mock)
+    new_task_id = len(_MOCK_TASK_DB) + 1
+    while any(t['id'] == new_task_id for t in _MOCK_TASK_DB): # Ensure uniqueness if tasks were deleted
+        new_task_id +=1
+
+    # Default values from Task model comments
+    default_status = kwargs.get('status', "To-Do")
+    default_priority = kwargs.get('priority', "Medium")
+    default_content_status = kwargs.get('content_status', "NotStarted")
+    default_content_version = kwargs.get('content_version', 0)
+
+    new_task = {
+        "id": new_task_id,
+        "reporter_id": reporter_id,
+        "title": title,
+        "description": description,
+        "client_id": client_id,
+        "assignee_id": assignee_id,
+        "status": default_status, # Overall task status
+        "priority": default_priority,
+        "due_date": kwargs.get('due_date', None),
+        "project_id": kwargs.get('project_id', None),
+        "reviewer_id": kwargs.get('reviewer_id', None), # For content tasks
+        # Content workflow fields
+        "content_status": default_content_status,
+        "raw_content_link": kwargs.get('raw_content_link', None),
+        "script_brief_link": kwargs.get('script_brief_link', None),
+        "edited_content_link": kwargs.get('edited_content_link', None),
+        "content_version": default_content_version,
+        "last_feedback_summary": kwargs.get('last_feedback_summary', None),
+        # "created_at": datetime.now() # Conceptual, would use real datetime
+        # "updated_at": datetime.now()
+    }
+
+    # Add to our mock DB
+    # _save_task_to_db will append if ID not found
+    _save_task_to_db(new_task)
+
+    # Conceptual Notification for assignment
+    if assignee_id:
+        _notify_user(
+            assignee_id,
+            f"You have been assigned a new task: '{title}' (ID: {new_task_id})."
+        )
+
+    print(f"Task {new_task_id} created: '{title}' by user {reporter_id}.")
+    return new_task
 
 def get_task_by_id(task_id, requesting_user_context):
     """
@@ -123,7 +179,54 @@ def add_comment_to_task(task_id, user_id, text_content, requesting_user_context)
     # 1. Get task, check if `requesting_user_context` (user_id) can comment on this task.
     # 2. Create Comment object and save.
     # 3. Notify relevant parties about the new comment.
-    pass
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # Conceptual Permission Check:
+    # User performing the action would be derived from `requesting_user_context` or `user_id`.
+    if not _check_permission(user_id, "add_comment", {"task_id": task_id, "task_assignee_id": task.get("assignee_id"), "task_reporter_id": task.get("reporter_id")}):
+        print(f"User {user_id} does not have permission to comment on task {task_id}.")
+        raise PermissionError(f"User {user_id} cannot comment on task {task_id}.")
+
+    if not text_content or not text_content.strip():
+        raise ValueError("Comment text cannot be empty.")
+
+    # Conceptual Comment Creation:
+    # For now, we'll just print. A real implementation would create a Comment record.
+    # A mock comment DB and _save_comment_to_db could be added later if needed for more complex testing.
+    mock_comment_id = len(_MOCK_TASK_DB) + 1000 + len(task.get("comments", [])) # semi-unique ID for mock
+    new_comment = {
+        'id': mock_comment_id,
+        'task_id': task_id,
+        'user_id': user_id,
+        'text_content': text_content,
+        # 'created_at': datetime.now() # Conceptual
+    }
+    # Conceptually add to a list of comments on the task or a separate comment DB
+    if "comments" not in task:
+        task["comments"] = []
+    task["comments"].append(new_comment)
+    _save_task_to_db(task) # Re-save task if comments are embedded or to update an 'updated_at' field
+
+    print(f"MockComment: User {user_id} added comment to task {task_id}: '{text_content}' (CommentID: {mock_comment_id})")
+
+    # Conceptual Notifications:
+    # Notify assignee if they aren't the one commenting
+    if task.get('assignee_id') and task.get('assignee_id') != user_id:
+        _notify_user(
+            task['assignee_id'],
+            f"New comment on task '{task.get('title', task_id)}' by user {user_id}: '{text_content}'"
+        )
+    # Notify reporter if they aren't the one commenting and also not the assignee
+    if task.get('reporter_id') and task.get('reporter_id') != user_id and task.get('reporter_id') != task.get('assignee_id'):
+        _notify_user(
+            task['reporter_id'],
+            f"New comment on task '{task.get('title', task_id)}' (that you reported) by user {user_id}: '{text_content}'"
+        )
+
+    return new_comment # Return the conceptual comment object
 
 # This service maps to "Internal Task Management Module" and parts of "Content Collaboration & Workflow".
 # It will be one of the most complex services in Phase 1.
@@ -425,13 +528,15 @@ def _check_permission(user_id, action, task_object):
         # For this mock, let's say user 1 (Videographer role) or task assignee can upload.
         # if user_id == 1 or (task_object and task_object.get('assignee_id') == user_id):
         #     return True
-    if action == "submit_for_review":
+        # Simplified for now, allowing the action.
+        return True
+    elif action == "submit_for_review":
         # Example: Only the current assignee (presumed Editor) can submit for review.
-        # For mock purposes, we'll allow it if the task object exists.
         # A real check:
         # if task_object and task_object.get('assignee_id') == user_id:
         #    return True
         # return False
+        print(f"MockAuth: Allowing 'submit_for_review' for user {user_id} on task {task_object.get('id', 'Unknown')}.")
         return True # Simplified for now
     elif action in ["approve_content", "request_changes_on_content"]:
         # Example: Only the designated reviewer_id for the task can perform these actions.
@@ -443,12 +548,24 @@ def _check_permission(user_id, action, task_object):
         # matches the task's reviewer_id, as the service functions already do this.
         # So, this part of mock _check_permission is more about acknowledging the action string.
         if task_object and task_object.get('reviewer_id') == user_id:
-             print(f"MockAuth: User {user_id} IS the designated reviewer for task {task_object.get('id')}.")
+             print(f"MockAuth: User {user_id} IS the designated reviewer for task {task_object.get('id')}. Allowing '{action}'.")
              return True
         # If the service function didn't pre-check, this mock would be more critical.
-        # For now, just acknowledging the action is enough.
-        return True # Simplified for now, assuming service function does primary check.
+        # For now, just acknowledging the action is enough if the above condition isn't met explicitly.
+        print(f"MockAuth: Allowing '{action}' for user {user_id} on task {task_object.get('id', 'Unknown')} (default for reviewer actions).")
+        return True # Simplified for now, assuming service function does primary check of user vs task.reviewer_id.
+    elif action == "create_task":
+        # Example: Any authenticated user might be able to create a task.
+        # More complex logic could check if they can create tasks for a specific client_id (passed in task_object for context here).
+        print(f"MockAuth: Allowing 'create_task' for user {user_id}.")
+        return True
+    elif action == "add_comment":
+        # Example: Users involved in the task (reporter, assignee, reviewer) or with general comment perms can comment.
+        # task_object here might contain task_id, task_assignee_id, task_reporter_id for context.
+        print(f"MockAuth: Allowing 'add_comment' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
+        return True
 
+    print(f"MockAuth: Defaulting to TRUE for action '{action}' for user {user_id}.")
     return True # Default to allow for other actions in mock
 
 
