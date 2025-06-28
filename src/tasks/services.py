@@ -135,15 +135,59 @@ def upload_raw_content(task_id, user_id, raw_content_link, script_brief_link=Non
     Updates a task with links to raw content and script/brief.
     Sets content_status to "RawUploaded".
     Typically performed by a Videographer or content uploader.
+
+    Args:
+        task_id (int): The ID of the task to update.
+        user_id (int): The ID of the user performing the upload.
+        raw_content_link (str): URL to the raw content.
+        script_brief_link (str, optional): URL to the script or brief.
+        requesting_user_context (any, optional): Context of the user making the request,
+                                                 for permission and tenancy checks.
+
+    Returns:
+        dict: A dictionary representing the updated task, or None if not found/permitted.
+              (Conceptual: actual return type would be Task object)
+
+    Raises:
+        PermissionError: If the user does not have permission.
+        ValueError: If task_id is invalid or task not found.
     """
-    # 1. Get task by task_id. Verify user (user_id or from requesting_user_context) has permission
-    #    (e.g., is assignee or has specific role like 'Videographer' for this task's client).
-    # 2. Update task fields: raw_content_link, script_brief_link.
-    # 3. Set task.content_status = "RawUploaded".
-    # 4. Increment task.content_version if applicable (or handle versioning more robustly).
-    # 5. Save task.
-    # 6. Notify relevant parties (e.g., assigned Editor if one is set).
-    pass
+    # Conceptual: These would interact with a real database and ORM
+    # from .models import Task # Assuming Task model is defined
+    # from ..core.auth import _check_permission # Conceptual permission check
+    # from ..core.notifications import _notify_user # Conceptual notification
+    # from .db_mocks import _get_task_from_db, _save_task_to_db # Using mocks for now
+
+    task = _get_task_from_db(task_id) # Simulate fetching task
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # Conceptual Permission Check:
+    # User performing the action would be derived from `requesting_user_context` or `user_id`.
+    # For this example, let's assume `user_id` is authoritative for now.
+    if not _check_permission(user_id, "upload_raw_content", task):
+        # In a real app, this would raise a specific exception like PermissionDeniedError
+        print(f"User {user_id} does not have permission to upload raw content for task {task_id}.")
+        raise PermissionError(f"User {user_id} cannot upload raw content for task {task_id}.")
+
+    task['raw_content_link'] = raw_content_link
+    if script_brief_link:
+        task['script_brief_link'] = script_brief_link
+
+    task['content_status'] = "RawUploaded"
+    task['content_version'] = (task.get('content_version', 0) or 0) + 1 # Ensure it's at least 1
+
+    _save_task_to_db(task) # Simulate saving the task
+
+    # Conceptual Notification:
+    if task.get('assignee_id'): # If an editor/next person is assigned
+        _notify_user(
+            task['assignee_id'],
+            f"Raw content has been uploaded for task '{task.get('title', task_id)}'. It is ready for editing."
+        )
+
+    print(f"Raw content uploaded for task {task_id}. Status: {task['content_status']}, Version: {task['content_version']}")
+    return task
 
 def submit_for_review(task_id, user_id, edited_content_link, requesting_user_context=None):
     """
@@ -197,4 +241,60 @@ def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requ
 # allowing a central place (e.g., a decorator or middleware) to extract user_id
 # and perform initial permission/tenancy checks if desired, rather than passing user_id separately.
 # The actual implementation will depend on the chosen web framework and authentication system.
+
+# --- Mock/Conceptual Helper Functions (for illustration purposes) ---
+# In a real application, these would be replaced by actual database interactions,
+# authentication/authorization services, and notification systems.
+
+# Conceptual database (in-memory list for mocking)
+_MOCK_TASK_DB = [
+    {"id": 1, "title": "Video Project Alpha", "assignee_id": 101, "reviewer_id": 102, "content_status": "NotStarted", "content_version": 0, "raw_content_link": None},
+    {"id": 2, "title": "Blog Post Beta", "assignee_id": 103, "reviewer_id": 101, "content_status": "NotStarted", "content_version": 0, "raw_content_link": None},
+]
+
+def _get_task_from_db(task_id):
+    """Conceptual: Fetches a task from the mock database."""
+    for task in _MOCK_TASK_DB:
+        if task['id'] == task_id:
+            return task # Return a copy to avoid modifying the mock DB directly by reference in some cases
+    return None
+
+def _save_task_to_db(task_object):
+    """Conceptual: 'Saves' a task to the mock database."""
+    for i, task in enumerate(_MOCK_TASK_DB):
+        if task['id'] == task_object['id']:
+            _MOCK_TASK_DB[i] = task_object
+            print(f"MockDB: Task {task_object['id']} updated: {task_object}")
+            return
+    # If not found, add it (for conceptual create_task if it were here)
+    _MOCK_TASK_DB.append(task_object)
+    print(f"MockDB: Task {task_object['id']} added: {task_object}")
+
+
+def _check_permission(user_id, action, task_object):
+    """
+    Conceptual: Checks if a user has permission to perform an action on a task.
+    For now, this is a very basic mock.
+    A real implementation would involve checking user roles and permissions (RBAC).
+    """
+    print(f"MockAuth: Checking permission for user {user_id} to '{action}' on task {task_object.get('id', 'Unknown')}.")
+    # Allow all actions for now for simplicity of service function flow
+    # In reality, this would check:
+    # - Is the user the assignee?
+    # - Is the user a manager for the client associated with the task?
+    # - Does the user's role (e.g., Videographer, Editor) grant this permission?
+    if action == "upload_raw_content":
+        # Example: Maybe only an assignee or a user with a 'Videographer' role can upload.
+        # For this mock, let's say user 1 (Videographer role) or task assignee can upload.
+        # if user_id == 1 or (task_object and task_object.get('assignee_id') == user_id):
+        #     return True
+        return True # Simplified for now
+    return True # Default to allow for other actions in mock
+
+
+def _notify_user(user_id, message):
+    """Conceptual: Sends a notification to a user."""
+    # In a real app, this would use an email service, WebSocket, or other notification mechanism.
+    print(f"MockNotify: Sending notification to user {user_id}: '{message}'")
+
 pass
