@@ -9,7 +9,7 @@ class Task:
     # id: int (Primary Key)
     # title: str
     # description: str (Text, can be Markdown or rich text)
-    # status: str (e.g., "To-Do", "In Progress", "In Review", "Done", "Waiting for Approval")
+    # status: str (Overall task status, e.g., "To-Do", "In Progress", "Blocked", "Done")
     # priority: str (e.g., "Low", "Medium", "High", "Urgent")
     # due_date: date (Optional)
     # created_at: datetime
@@ -18,19 +18,30 @@ class Task:
     # # Relationships
     # client_id: int (Foreign Key to Client model, Nullable) - Associates task with a specific client project.
     #                                                        - Null for internal agency tasks.
-    # assignee_id: int (Foreign Key to User model, Nullable) - User responsible for completing the task.
+    # assignee_id: int (Foreign Key to User model, Nullable) - User responsible for the current phase of the task.
     # reporter_id: int (Foreign Key to User model) - User who created or reported the task.
     # project_id: int (Foreign Key to Project model, Nullable) - If tasks are grouped into larger projects.
+    # reviewer_id: int (Foreign Key to User model, Nullable) - User designated to review/approve the content.
     #
-    # # Content Workflow related fields (could be in a separate model/table linked to task if complex)
-    # raw_content_link: str (Optional, e.g., link to Google Drive for raw footage)
-    # script_or_brief_link: str (Optional, e.g., link to Google Doc)
-    # edited_content_link: str (Optional, e.g., link to edited video)
-    # approval_status: str (Optional, e.g., "Pending Review", "Changes Requested", "Approved")
-    # reviewer_id: int (Foreign Key to User model, Nullable) - User responsible for approving content.
+    # # Content Workflow Specific Fields
+    # # This section details fields specifically for tasks that involve a content creation/approval lifecycle.
+    # content_status: str (Optional, e.g., "NotStarted", "RawUploaded", "EditingInProgress", "PendingReview", "ChangesRequested", "Approved")
+    #   - This status is specific to the content lifecycle within the task.
+    #   - It can work alongside the overall task `status`. For example, a task `status` could be "In Progress"
+    #     while `content_status` moves from "RawUploaded" to "EditingInProgress".
+    # raw_content_link: str (Optional, URL to raw footage/assets, e.g., Google Drive link)
+    # script_brief_link: str (Optional, URL to script, brief, or supporting documents)
+    # edited_content_link: str (Optional, URL to the edited version of the content ready for review)
+    # content_version: int (Optional, simple version counter, e.g., 1, 2, for revisions)
+    # last_feedback_summary: str (Optional, stores key feedback points from the last review cycle)
+    #
+    # # Note on version_history:
+    # # A more complex `version_history` (e.g., JSON field or a separate ContentVersion model)
+    # # could store an array of objects, each with {version, link, submitted_at, reviewer_feedback, reviewed_at}.
+    # # For MVP, `content_version` and `last_feedback_summary` along with task comments might suffice.
     #
     # # Attachments & Comments (likely separate models with Many-to-One relationship to Task)
-    # # attachments: list[Attachment]
+    # # attachments: list[Attachment] # General task attachments
     # # comments: list[Comment]
     pass
 

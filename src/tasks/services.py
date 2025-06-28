@@ -27,20 +27,13 @@ Task Management:
   - This is fundamental for task lists, Kanban boards, and personalized dashboards.
   - "Role-Specific Views": Filtering will be key to tailoring views for Videographers, Editors, etc.
 
-Task Workflow (Content Collaboration related):
-- update_task_content_links(task_id, requesting_user_context, raw_content_link=None, script_or_brief_link=None, edited_content_link=None)
-- submit_task_for_approval(task_id, requesting_user_context, reviewer_id)
-  - Changes task status to "Waiting for Approval" or "In Review".
-  - Notifies the `reviewer_id`.
-- approve_task_content(task_id, requesting_user_context)
-  - Changes status to "Approved" or "Completed".
-  - Potentially triggers next steps (e.g., AI transcription via `ai_services`).
-- request_task_changes(task_id, requesting_user_context, comments)
-  - Changes status back to "In Progress" (or similar).
-  - Adds comments for feedback.
+Task Workflow (Content Collaboration related - specific functions to be detailed below):
+- Manages transitions of `content_status` (e.g., "RawUploaded", "PendingReview", "Approved").
+- Handles notifications for content workflow steps (e.g., to reviewer when content is submitted).
+- Integrates with permission checks (e.g., only assigned editor can submit for review).
 
 Comments & Attachments:
-- add_comment_to_task(task_id, user_id, text_content)
+- add_comment_to_task(task_id, user_id, text_content, requesting_user_context) # Added requesting_user_context
 - list_comments_for_task(task_id, requesting_user_context)
 - add_attachment_to_task(task_id, user_id, file_url=None, file_name=None, attachment_type="link") # Support direct uploads later
 - list_attachments_for_task(task_id, requesting_user_context)
@@ -134,4 +127,74 @@ def add_comment_to_task(task_id, user_id, text_content, requesting_user_context)
 
 # This service maps to "Internal Task Management Module" and parts of "Content Collaboration & Workflow".
 # It will be one of the most complex services in Phase 1.
+
+# --- Content Workflow Specific Functions ---
+
+def upload_raw_content(task_id, user_id, raw_content_link, script_brief_link=None, requesting_user_context=None):
+    """
+    Updates a task with links to raw content and script/brief.
+    Sets content_status to "RawUploaded".
+    Typically performed by a Videographer or content uploader.
+    """
+    # 1. Get task by task_id. Verify user (user_id or from requesting_user_context) has permission
+    #    (e.g., is assignee or has specific role like 'Videographer' for this task's client).
+    # 2. Update task fields: raw_content_link, script_brief_link.
+    # 3. Set task.content_status = "RawUploaded".
+    # 4. Increment task.content_version if applicable (or handle versioning more robustly).
+    # 5. Save task.
+    # 6. Notify relevant parties (e.g., assigned Editor if one is set).
+    pass
+
+def submit_for_review(task_id, user_id, edited_content_link, requesting_user_context=None):
+    """
+    Submits edited content for review.
+    Updates task with the edited content link and sets content_status to "PendingReview".
+    Assigns a reviewer if not already set (or confirms existing reviewer).
+    Typically performed by an Editor.
+    """
+    # 1. Get task by task_id. Verify user (user_id or from requesting_user_context) has permission
+    #    (e.g., is current assignee, likely an Editor).
+    # 2. Ensure a reviewer_id is set on the task. If not, it might need to be assigned here or error.
+    # 3. Update task fields: edited_content_link.
+    # 4. Set task.content_status = "PendingReview".
+    # 5. Increment task.content_version.
+    # 6. Save task.
+    # 7. Notify the task.reviewer_id that content is ready for their review.
+    pass
+
+def approve_content(task_id, reviewer_id, requesting_user_context=None):
+    """
+    Approves the content for a task.
+    Sets content_status to "Approved".
+    Typically performed by the user set as task.reviewer_id.
+    """
+    # 1. Get task by task_id. Verify user (reviewer_id or from requesting_user_context) is the designated reviewer
+    #    and has permission to approve.
+    # 2. Set task.content_status = "Approved".
+    # 3. Optionally, update overall task.status (e.g., to "Completed" or a specific "ContentApproved" status).
+    # 4. Save task.
+    # 5. Notify relevant parties (e.g., original reporter, assignee, Social Media Manager).
+    # 6. Placeholder: Trigger next step in workflow (e.g., call ai_services.transcribe_video(task.edited_content_link) - Phase 4).
+    pass
+
+def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requesting_user_context=None):
+    """
+    Requests changes on the submitted content.
+    Sets content_status to "ChangesRequested".
+    Adds feedback as a comment to the task.
+    Typically performed by the user set as task.reviewer_id.
+    """
+    # 1. Get task by task_id. Verify user (reviewer_id or from requesting_user_context) is the designated reviewer.
+    # 2. Set task.content_status = "ChangesRequested".
+    # 3. Store feedback_comment_text:
+    #    - Add as a new comment to the task using add_comment_to_task().
+    #    - Optionally, also update task.last_feedback_summary.
+    # 4. Save task.
+    # 5. Notify the assignee (e.g., the Editor) that changes are requested, including the feedback.
+    pass
+
+# Note: `requesting_user_context` is added to these functions for consistency,
+# allowing a central place (e.g., a decorator or middleware) to extract user_id
+# and perform initial permission/tenancy checks if desired, rather than passing user_id separately.
+# The actual implementation will depend on the chosen web framework and authentication system.
 pass
