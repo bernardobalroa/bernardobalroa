@@ -144,7 +144,37 @@ def get_task_by_id(task_id, requesting_user_context):
     #    - Is it their task? Is it for their client? Do they have global view rights?
     #    - Check against effective client_id from multi-tenancy context.
     # 3. If not found or access denied, raise error.
-    pass
+
+    # Assuming requesting_user_context is an object or dict containing user_id
+    # current_user_id = requesting_user_context.get('user_id') # Example
+    # For mock, let's assume requesting_user_context IS the user_id for simplicity if not an object
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # Conceptual Permission Check:
+    # This check would be more complex in reality, involving user roles, client associations, etc.
+    # For mock: check if user is reporter, assignee, or reviewer as a basic check.
+    # A more generic "view_task" permission would be checked against the user's roles.
+    permission_context = {
+        "task_id": task_id,
+        "assignee_id": task.get("assignee_id"),
+        "reporter_id": task.get("reporter_id"),
+        "reviewer_id": task.get("reviewer_id"),
+        "client_id": task.get("client_id")
+        # In a real system, user's client_id(s) would also be part of requesting_user_context
+    }
+    if not _check_permission(current_user_id, "get_task", permission_context):
+        # In a real app, this would raise a specific exception like PermissionDeniedError
+        # or the _get_task_from_db might be scoped by user visibility already.
+        print(f"User {current_user_id} does not have permission to view task {task_id}.")
+        raise PermissionError(f"User {current_user_id} cannot view task {task_id}.")
+
+    print(f"Task {task_id} retrieved by user {current_user_id}.")
+    return task
 
 def list_tasks(requesting_user_context, filters=None, sort_by=None, pagination=None):
     """
@@ -158,7 +188,53 @@ def list_tasks(requesting_user_context, filters=None, sort_by=None, pagination=N
     # 3. Apply `sort_by`.
     # 4. Apply `pagination`.
     # 5. Return list of Task objects.
-    pass
+
+    # For mock, let's assume requesting_user_context IS the user_id for simplicity if not an object
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+    # Conceptual Permission/Scope Check:
+    # In a real system, this would first determine what client_id(s) the user can access,
+    # then filter tasks by that. For super-admins, it might be all tasks.
+    # For now, our mock _check_permission for "list_tasks" will just allow,
+    # and we'll apply filters directly to the whole _MOCK_TASK_DB for simplicity.
+    # The `task_object` for _check_permission in list context might be a generic
+    # indicator like `{"action_scope": "all"}` or `{"client_id": user_client_id}`.
+    if not _check_permission(current_user_id, "list_tasks", {"filters_intended": filters}):
+        print(f"User {current_user_id} does not have permission to list tasks with these filters.")
+        raise PermissionError(f"User {current_user_id} cannot list tasks.")
+
+    results = []
+    # Deepcopy to avoid modifying the original mock tasks if we were to manipulate them here.
+    # For simple filtering, it's not strictly necessary but good practice.
+    # tasks_to_filter = [dict(t) for t in _MOCK_TASK_DB]
+    tasks_to_filter = _MOCK_TASK_DB
+
+
+    if filters:
+        for task in tasks_to_filter:
+            match = True
+            for key, value in filters.items():
+                if task.get(key) != value:
+                    match = False
+                    break
+            if match:
+                results.append(dict(task)) # Append a copy
+    else:
+        # No filters, return all (conceptually, all tasks visible to the user)
+        results = [dict(t) for t in tasks_to_filter]
+
+    # Conceptual: Sorting (would be complex for mock)
+    # if sort_by:
+    #     print(f"Conceptual: Sorting by {sort_by} would happen here.")
+    #     # e.g., results.sort(key=lambda x: x.get(sort_by_field, default_sort_value), reverse=is_descending)
+
+    # Conceptual: Pagination (would be complex for mock)
+    # if pagination:
+    #     print(f"Conceptual: Pagination ({pagination}) would be applied here.")
+    #     # e.g., start = (page - 1) * per_page; end = start + per_page; results = results[start:end]
+
+    print(f"User {current_user_id} listed tasks. Filters: {filters}. Found: {len(results)} tasks.")
+    return results
 
 def update_task_status(task_id, new_status, requesting_user_context):
     """
@@ -170,7 +246,65 @@ def update_task_status(task_id, new_status, requesting_user_context):
     # 4. Trigger notifications or other actions based on status change
     #    (e.g., if status becomes "Waiting for Approval", notify reviewer).
     #    If "Approved", may trigger AI transcription service call.
-    pass
+
+    # This is a general update placeholder; specific status changes like content workflow
+    # are handled by more specific functions (approve_content, request_changes_on_content, etc.)
+    # This function would handle changes to title, description, priority, due_date, assignee, etc.
+
+    # For mock, let's assume requesting_user_context IS the user_id for simplicity if not an object
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # Conceptual Permission Check:
+    # User needs 'update_task' permission. Granular checks for specific fields might also apply.
+    if not _check_permission(current_user_id, "update_task", task): # Pass the whole task for context
+        print(f"User {current_user_id} does not have permission to update task {task_id}.")
+        raise PermissionError(f"User {current_user_id} cannot update task {task_id}.")
+
+    updated_fields = []
+    original_assignee = task.get('assignee_id')
+
+    # Iterate through kwargs to update fields.
+    # Add comments about fields that should be handled by specific workflow functions.
+    for key, value in kwargs.items():
+        if key in task: # Only update existing keys, or be more flexible if schema can evolve
+            if key == "id": # ID should not be updatable
+                print(f"Warning: Attempt to update 'id' for task {task_id} was ignored.")
+                continue
+            if key == "content_status":
+                print(f"Warning: 'content_status' for task {task_id} should ideally be updated via specific workflow functions (e.g., approve_content). Allowing for now in mock.")
+            if key == "status" and value == "PendingReview": # Example of a status that implies a workflow
+                 print(f"Warning: Changing 'status' to 'PendingReview' for task {task_id} might be better handled by 'submit_for_review'. Allowing for now in mock.")
+
+            if task[key] != value:
+                task[key] = value
+                updated_fields.append(key)
+        else:
+            print(f"Warning: Key '{key}' not found in task {task_id} schema, update ignored.")
+
+    if not updated_fields:
+        print(f"No fields updated for task {task_id}.")
+        return task # Or raise a specific "NoChangesMade" error/return different status
+
+    # task["updated_at"] = datetime.now() # Conceptual
+    _save_task_to_db(task)
+
+    # Conceptual Notifications:
+    if "assignee_id" in updated_fields and task.get('assignee_id') != original_assignee:
+        if original_assignee:
+             _notify_user(original_assignee, f"You have been unassigned from task '{task.get('title', task_id)}'.")
+        if task.get('assignee_id'):
+            _notify_user(task['assignee_id'], f"You have been assigned to task '{task.get('title', task_id)}'.")
+
+    # Generic update notification (could be to reporter or other stakeholders)
+    if updated_fields:
+        _notify_user(task.get('reporter_id'), f"Task '{task.get('title', task_id)}' has been updated. Changed fields: {', '.join(updated_fields)}.")
+
+    print(f"Task {task_id} updated by user {current_user_id}. Changed fields: {', '.join(updated_fields) if updated_fields else 'None'}.")
+    return task
 
 def add_comment_to_task(task_id, user_id, text_content, requesting_user_context):
     """
@@ -487,9 +621,11 @@ def request_changes_on_content(task_id, reviewer_id, feedback_comment_text, requ
 
 # Conceptual database (in-memory list for mocking)
 _MOCK_TASK_DB = [
-    {"id": 1, "title": "Video Project Alpha", "assignee_id": 101, "reviewer_id": 102, "content_status": "NotStarted", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None},
-    {"id": 2, "title": "Blog Post Beta", "assignee_id": 103, "reviewer_id": 101, "content_status": "RawUploaded", "content_version": 1, "raw_content_link": "http://example.com/raw_blog", "edited_content_link": None, "last_feedback_summary": None},
-    {"id": 3, "title": "Client Presentation Gamma", "assignee_id": 101, "reviewer_id": 102, "content_status": "PendingReview", "content_version": 1, "raw_content_link": "http://example.com/raw_pres", "edited_content_link": "http://example.com/edited_pres_v1", "last_feedback_summary": None},
+_MOCK_TASK_DB = [
+    {"id": 1, "title": "Video Project Alpha", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "reviewer_id": 102, "status": "In Progress", "priority": "High", "content_status": "RawUploaded", "content_version": 1, "raw_content_link": "link1", "edited_content_link": None, "last_feedback_summary": None, "comments": []},
+    {"id": 2, "title": "Blog Post Beta", "client_id": 20, "assignee_id": 103, "reporter_id": 202, "reviewer_id": 101, "status": "To-Do", "priority": "Medium", "content_status": "NotStarted", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None, "comments": []},
+    {"id": 3, "title": "Client Presentation Gamma", "client_id": 10, "assignee_id": 101, "reporter_id": 201, "reviewer_id": 102, "status": "In Progress", "priority": "High", "content_status": "PendingReview", "content_version": 1, "raw_content_link": "link_raw_gamma", "edited_content_link": "link_edited_gamma_v1", "last_feedback_summary": None, "comments": []},
+    {"id": 4, "title": "Internal KB Update", "client_id": None, "assignee_id": 102, "reporter_id": 201, "reviewer_id": None, "status": "To-Do", "priority": "Low", "content_status": "NotApplicable", "content_version": 0, "raw_content_link": None, "edited_content_link": None, "last_feedback_summary": None, "comments": []},
 ]
 
 def _get_task_from_db(task_id):
@@ -564,8 +700,24 @@ def _check_permission(user_id, action, task_object):
         # task_object here might contain task_id, task_assignee_id, task_reporter_id for context.
         print(f"MockAuth: Allowing 'add_comment' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
         return True
+    elif action == "get_task":
+        # Example: User might need to be reporter, assignee, reviewer, or related to the client_id.
+        # task_object here is the permission_context from get_task_by_id.
+        # A real check would be complex, involving user's client associations.
+        print(f"MockAuth: Allowing 'get_task' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
+        return True
+    elif action == "update_task":
+        # Example: User might need to be assignee, reporter, or manager.
+        # task_object is the task itself.
+        print(f"MockAuth: Allowing 'update_task' for user {user_id} on task {task_object.get('id', 'Unknown')}.")
+        return True
+    elif action == "list_tasks":
+        # Example: All authenticated users can list tasks, but the list will be pre-filtered by their client access.
+        # task_object here is `{"filters_intended": filters}`.
+        print(f"MockAuth: Allowing 'list_tasks' for user {user_id}.")
+        return True
 
-    print(f"MockAuth: Defaulting to TRUE for action '{action}' for user {user_id}.")
+    print(f"MockAuth: Defaulting to TRUE for action '{action}' for user {user_id} on task {task_object.get('id', 'Unknown') if isinstance(task_object, dict) else 'N/A'}.")
     return True # Default to allow for other actions in mock
 
 
