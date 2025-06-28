@@ -786,6 +786,106 @@ def request_changes_on_content_asset(content_asset_id, reviewer_id, feedback_com
 
 # --- Mock/Conceptual Helper Functions (for illustration purposes) ---
 
+def get_content_asset_by_id(content_asset_id, requesting_user_context):
+    """
+    Retrieves a specific content asset by its ID.
+    Requires permission to view the parent task or the asset itself.
+    """
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+    asset = _get_content_asset_from_db(content_asset_id)
+    if not asset:
+        raise ValueError(f"ContentAsset with ID {content_asset_id} not found.")
+
+    # Conceptual Permission Check:
+    # User might need to have access to the parent task or be directly involved with the asset.
+    parent_task = _get_task_from_db(asset.get("task_id"))
+    permission_context = {
+        "content_asset_id": content_asset_id,
+        "task_id": asset.get("task_id"),
+        "asset_assignee_id": asset.get("assignee_id"),
+        "asset_reviewer_id": asset.get("reviewer_id"),
+        "task_client_id": parent_task.get("client_id") if parent_task else None
+    }
+    if not _check_permission(current_user_id, "get_content_asset", permission_context):
+        print(f"User {current_user_id} does not have permission to view content asset {content_asset_id}.")
+        raise PermissionError(f"User {current_user_id} cannot view content asset {content_asset_id}.")
+
+    print(f"ContentAsset {content_asset_id} retrieved by user {current_user_id}.")
+    return asset
+
+
+def list_content_assets_for_task(task_id, requesting_user_context, filters=None):
+    """
+    Lists content assets associated with a specific task.
+    Requires permission to view the parent task.
+    Optionally filters assets (e.g., by asset_type, content_status).
+    """
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+    parent_task = _get_task_from_db(task_id)
+    if not parent_task:
+        raise ValueError(f"Task with ID {task_id} not found. Cannot list content assets.")
+
+    # Conceptual Permission Check: (e.g., can user view this task's details?)
+    permission_context = {
+        "task_id": task_id,
+        "assignee_id": parent_task.get("assignee_id"),
+        "reporter_id": parent_task.get("reporter_id"),
+        # "reviewer_id" was removed from task, access might depend on general task visibility for client
+        "client_id": parent_task.get("client_id")
+    }
+    if not _check_permission(current_user_id, "list_content_assets", permission_context): # Could reuse "get_task" permission
+        print(f"User {current_user_id} does not have permission to list content assets for task {task_id}.")
+        raise PermissionError(f"User {current_user_id} cannot list content assets for task {task_id}.")
+
+    assets_for_task = []
+    for asset in _MOCK_CONTENT_ASSET_DB:
+        if asset.get("task_id") == task_id:
+            match = True
+            if filters:
+                for key, value in filters.items():
+                    if asset.get(key) != value:
+                        match = False
+                        break
+            if match:
+                assets_for_task.append(dict(asset)) # Append a copy
+
+    print(f"User {current_user_id} listed {len(assets_for_task)} content assets for task {task_id} with filters {filters}.")
+    return assets_for_task
+
+
+def delete_content_asset(content_asset_id, requesting_user_context):
+    """
+    Deletes a specific content asset.
+    Requires permission to delete assets, possibly checking against asset assignee or task manager.
+    """
+    current_user_id = requesting_user_context if isinstance(requesting_user_context, int) else requesting_user_context.get('user_id', 0)
+
+    asset = _get_content_asset_from_db(content_asset_id)
+    if not asset:
+        raise ValueError(f"ContentAsset with ID {content_asset_id} not found to delete.")
+
+    # Conceptual Permission Check:
+    permission_context = {
+        "content_asset_id": content_asset_id,
+        "task_id": asset.get("task_id"),
+        "asset_assignee_id": asset.get("assignee_id")
+        # Potentially add parent_task.client_id if needed for broader admin roles
+    }
+    if not _check_permission(current_user_id, "delete_content_asset", permission_context):
+        print(f"User {current_user_id} does not have permission to delete content asset {content_asset_id}.")
+        raise PermissionError(f"User {current_user_id} cannot delete content asset {content_asset_id}.")
+
+    # Mock Deletion Logic: Remove from the list
+    global _MOCK_CONTENT_ASSET_DB
+    _MOCK_CONTENT_ASSET_DB = [ca for ca in _MOCK_CONTENT_ASSET_DB if ca['id'] != content_asset_id]
+
+    print(f"ContentAsset {content_asset_id} deleted by user {current_user_id}.")
+    # Consider if associated files in external storage should be handled (out of scope for this mock).
+    return True
+
+
 _MOCK_CONTENT_ASSET_DB = [
     {
         "id": 1, "task_id": 1, "name": "Alpha Video - Draft 1", "asset_type": "video",
@@ -993,6 +1093,21 @@ def _check_permission(user_id, action, task_object):
             print(f"MockAuth: User {user_id} IS the reviewer for asset {task_object.get('content_asset_id')}. Allowing '{action}'.")
             return True
         print(f"MockAuth: Allowing '{action}' for user {user_id} on asset {task_object.get('content_asset_id', 'Unknown')}.")
+        return True
+    elif action == "get_content_asset":
+        # task_object is the permission_context from get_content_asset_by_id
+        # Example: User might need access to parent task.
+        print(f"MockAuth: Allowing 'get_content_asset' for user {user_id} on asset {task_object.get('content_asset_id', 'Unknown')}.")
+        return True
+    elif action == "list_content_assets":
+        # task_object is permission_context from list_content_assets_for_task
+        # Example: User might need access to parent task.
+        print(f"MockAuth: Allowing 'list_content_assets' for user {user_id} for task {task_object.get('task_id', 'Unknown')}.")
+        return True
+    elif action == "delete_content_asset":
+        # task_object is permission_context from delete_content_asset
+        # Example: User might need to be asset assignee or task manager.
+        print(f"MockAuth: Allowing 'delete_content_asset' for user {user_id} on asset {task_object.get('content_asset_id', 'Unknown')}.")
         return True
 
     print(f"MockAuth: Defaulting to TRUE for action '{action}' for user {user_id} on context {task_object if task_object else 'N/A'}.") # Generalised context object name
