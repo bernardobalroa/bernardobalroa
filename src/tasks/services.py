@@ -193,18 +193,59 @@ def submit_for_review(task_id, user_id, edited_content_link, requesting_user_con
     """
     Submits edited content for review.
     Updates task with the edited content link and sets content_status to "PendingReview".
-    Assigns a reviewer if not already set (or confirms existing reviewer).
-    Typically performed by an Editor.
+    Notifies the designated reviewer.
+    Typically performed by an Editor or the person responsible for editing.
+
+    Args:
+        task_id (int): The ID of the task.
+        user_id (int): The ID of the user submitting for review.
+        edited_content_link (str): URL to the edited content.
+        requesting_user_context (any, optional): User context for permissions.
+
+    Returns:
+        dict: The updated task object (conceptual).
+
+    Raises:
+        ValueError: If task not found, reviewer not assigned, or edited_content_link is missing.
+        PermissionError: If user lacks permission.
     """
-    # 1. Get task by task_id. Verify user (user_id or from requesting_user_context) has permission
-    #    (e.g., is current assignee, likely an Editor).
-    # 2. Ensure a reviewer_id is set on the task. If not, it might need to be assigned here or error.
-    # 3. Update task fields: edited_content_link.
-    # 4. Set task.content_status = "PendingReview".
-    # 5. Increment task.content_version.
-    # 6. Save task.
-    # 7. Notify the task.reviewer_id that content is ready for their review.
-    pass
+    task = _get_task_from_db(task_id)
+    if not task:
+        raise ValueError(f"Task with ID {task_id} not found.")
+
+    # Conceptual Permission Check:
+    # User submitting should typically be the current assignee (e.g., Editor).
+    if not _check_permission(user_id, "submit_for_review", task):
+        # This permission might check if user_id == task.get('assignee_id')
+        print(f"User {user_id} does not have permission to submit content for review for task {task_id}.")
+        raise PermissionError(f"User {user_id} cannot submit content for review for task {task_id}.")
+
+    if not task.get("reviewer_id"):
+        raise ValueError(f"Task {task_id} does not have a designated reviewer_id. Cannot submit for review.")
+
+    if not edited_content_link:
+        raise ValueError("edited_content_link must be provided when submitting for review.")
+
+    task['edited_content_link'] = edited_content_link
+    task['content_status'] = "PendingReview"
+    # Version was already incremented during upload_raw_content or a previous edit cycle.
+    # If each submission for review is a new version, then increment here.
+    # For now, let's assume version increments on new raw upload or when changes are requested and re-submitted.
+    # So, we might not always increment version here, or it's handled by a separate "upload new version" action.
+    # Let's assume for now, a submission for review is on the current version.
+    # If a new version is implied by submitting for review:
+    # task['content_version'] = (task.get('content_version', 0) or 0) + 1
+
+    _save_task_to_db(task)
+
+    # Conceptual Notification:
+    _notify_user(
+        task['reviewer_id'],
+        f"Content for task '{task.get('title', task_id)}' (Version {task.get('content_version', 'N/A')}) is ready for your review. Link: {task['edited_content_link']}"
+    )
+
+    print(f"Content for task {task_id} submitted for review. Status: {task['content_status']}")
+    return task
 
 def approve_content(task_id, reviewer_id, requesting_user_context=None):
     """
@@ -288,6 +329,13 @@ def _check_permission(user_id, action, task_object):
         # For this mock, let's say user 1 (Videographer role) or task assignee can upload.
         # if user_id == 1 or (task_object and task_object.get('assignee_id') == user_id):
         #     return True
+    if action == "submit_for_review":
+        # Example: Only the current assignee (presumed Editor) can submit for review.
+        # For mock purposes, we'll allow it if the task object exists.
+        # A real check:
+        # if task_object and task_object.get('assignee_id') == user_id:
+        #    return True
+        # return False
         return True # Simplified for now
     return True # Default to allow for other actions in mock
 
