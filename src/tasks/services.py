@@ -496,7 +496,7 @@ def list_attachments_for_task(task_id, requesting_user_context):
 
 # --- Content Workflow Specific Functions (Refactored for ContentAsset) ---
 
-def create_content_asset(task_id, user_id, asset_type, name=None, raw_content_link=None, script_brief_link=None, assignee_id=None, reviewer_id=None, requesting_user_context=None):
+def create_content_asset(task_id, user_id, asset_type, name=None, raw_content_link=None, source_document_link=None, assignee_id=None, reviewer_id=None, requesting_user_context=None):
     """
     Creates a new content asset associated with a task.
     Typically called when initiating a new piece of content for a task.
@@ -508,9 +508,57 @@ def create_content_asset(task_id, user_id, asset_type, name=None, raw_content_li
     # 5. Return new ContentAsset object.
     # This function now takes over some responsibility from the old upload_raw_content,
     # focusing on creating the asset record. Uploading links might be a subsequent update to this asset.
-    print(f"Conceptual: create_content_asset for task {task_id}, type {asset_type} by user {user_id}")
-    # ... (To be implemented with mock DB interactions for ContentAsset)
-    pass
+
+    current_user_id = user_id # Assuming user_id is authoritative for creation context for now.
+                              # requesting_user_context might be used for more complex permission logic.
+
+    # 1. Fetch parent task to ensure it exists.
+    parent_task = _get_task_from_db(task_id)
+    if not parent_task:
+        raise ValueError(f"Parent task with ID {task_id} not found. Cannot create content asset.")
+
+    # 2. Permission check: Can user_id create content assets for this task_id?
+    # Pass task object for context if needed by permission check
+    if not _check_permission(current_user_id, "create_content_asset", {"task_id": task_id, "task_client_id": parent_task.get("client_id")}):
+        print(f"User {current_user_id} does not have permission to create content assets for task {task_id}.")
+        raise PermissionError(f"User {current_user_id} cannot create content assets for task {task_id}.")
+
+    if not asset_type or not asset_type.strip():
+        raise ValueError("asset_type must be provided.")
+
+    # 3. Create ContentAsset object with initial values
+    new_asset_id = _get_next_content_asset_id()
+    new_asset = {
+        "id": new_asset_id,
+        "task_id": task_id,
+        "name": name,
+        "asset_type": asset_type,
+        "content_status": "NotStarted", # Default status
+        "version_number": 1, # Initial version
+        "raw_content_link": raw_content_link,
+        "source_document_link": source_document_link,
+        "current_content_link": None, # Typically set when first version is ready or submitted
+        "published_url": None,
+        "assignee_id": assignee_id, # Specific assignee for this asset
+        "reviewer_id": reviewer_id, # Specific reviewer for this asset
+        "last_feedback_summary": None,
+        # "created_at": datetime.now(), # Conceptual
+        # "updated_at": datetime.now()  # Conceptual
+    }
+
+    # 4. Save ContentAsset object (to _MOCK_CONTENT_ASSET_DB).
+    _save_content_asset_to_db(new_asset)
+
+    # Conceptual Notification (e.g., to asset assignee if provided)
+    if new_asset.get('assignee_id'):
+        _notify_user(
+            new_asset['assignee_id'],
+            f"You have been assigned a new content asset: '{new_asset.get('name', asset_type)}' (ID: {new_asset_id}) for task '{parent_task.get('title', task_id)}'."
+        )
+
+    print(f"ContentAsset (ID: {new_asset_id}, Type: {asset_type}, Name: {name}) created for task {task_id} by user {current_user_id}.")
+    # 5. Return new ContentAsset object.
+    return new_asset
 
 def update_content_asset_links(content_asset_id, user_id, raw_link=None, script_link=None, edited_link=None, requesting_user_context=None):
     """
