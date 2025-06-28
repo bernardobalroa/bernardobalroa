@@ -597,7 +597,48 @@ def submit_content_asset_for_review(content_asset_id, user_id, edited_content_li
     # task['edited_content_link'] = edited_content_link
     # task['content_status'] = "PendingReview" ...
     # _notify_user(task['reviewer_id'], ...)
-    pass
+
+    current_user_id = user_id # User performing the submission
+
+    asset = _get_content_asset_from_db(content_asset_id)
+    if not asset:
+        raise ValueError(f"ContentAsset with ID {content_asset_id} not found.")
+
+    # Permission Check: e.g., current_user_id should be asset['assignee_id']
+    permission_context = {"content_asset_id": content_asset_id, "asset_assignee_id": asset.get("assignee_id")}
+    if not _check_permission(current_user_id, "submit_content_asset_for_review", permission_context):
+        print(f"User {current_user_id} does not have permission to submit content asset {content_asset_id} for review.")
+        raise PermissionError(f"User {current_user_id} cannot submit content asset {content_asset_id} for review.")
+
+    if not asset.get("reviewer_id"):
+        raise ValueError(f"ContentAsset {content_asset_id} does not have a designated reviewer_id. Cannot submit for review.")
+
+    if not edited_content_link or not edited_content_link.strip():
+        raise ValueError("edited_content_link must be provided when submitting for review.")
+
+    asset['current_content_link'] = edited_content_link
+    asset['content_status'] = "PendingReview"
+    # asset['submitted_for_review_at'] = datetime.now() # Conceptual
+    # Versioning: Decide if submitting for review automatically increments version.
+    # For now, let's assume version was incremented when the edited_content_link was last updated
+    # via update_content_asset_links or during creation if provided then.
+    # If a new version is explicitly created upon *each* submission, then:
+    # asset['version_number'] = (asset.get('version_number', 0) or 0) + 1
+
+
+    _save_content_asset_to_db(asset)
+
+    parent_task = _get_task_from_db(asset.get("task_id"))
+    task_title = parent_task.get("title", asset.get("task_id")) if parent_task else asset.get("task_id")
+
+
+    _notify_user(
+        asset['reviewer_id'],
+        f"Content asset '{asset.get('name', content_asset_id)}' (Version {asset.get('version_number', 'N/A')}) for task '{task_title}' is ready for your review. Link: {asset['current_content_link']}"
+    )
+
+    print(f"ContentAsset {content_asset_id} submitted for review by user {current_user_id}. Status: PendingReview")
+    return asset
 
 def approve_content_asset(content_asset_id, reviewer_id, requesting_user_context=None):
     """
@@ -614,8 +655,57 @@ def approve_content_asset(content_asset_id, reviewer_id, requesting_user_context
     # 5. Save ContentAsset.
     # 6. Notify relevant parties (asset assignee, task reporter, etc.).
     # 7. Conceptual: Trigger AI transcription for this asset's approved link.
-    print(f"Conceptual: approve_content_asset for asset {content_asset_id}")
-    pass
+
+    current_user_id = reviewer_id # The user performing the approval IS the reviewer_id for this function
+
+    asset = _get_content_asset_from_db(content_asset_id)
+    if not asset:
+        raise ValueError(f"ContentAsset with ID {content_asset_id} not found.")
+
+    # Permission Check: current_user_id must be the asset['reviewer_id']
+    if asset.get("reviewer_id") != current_user_id:
+        print(f"User {current_user_id} is not the designated reviewer for content asset {content_asset_id} (actual: {asset.get('reviewer_id')}).")
+        raise PermissionError(f"User {current_user_id} is not the designated reviewer for content asset {content_asset_id}.")
+
+    if not _check_permission(current_user_id, "approve_content_asset", {"content_asset_id": content_asset_id, "asset_reviewer_id": asset.get("reviewer_id")}):
+        print(f"User {current_user_id} does not have permission to approve content asset {content_asset_id}.")
+        raise PermissionError(f"User {current_user_id} cannot approve content asset {content_asset_id}.")
+
+    if asset.get("content_status") != "PendingReview":
+        raise ValueError(f"ContentAsset {content_asset_id} is in status '{asset.get('content_status')}', cannot approve. Expected 'PendingReview'.")
+
+    asset['content_status'] = "Approved"
+    # asset['approved_at'] = datetime.now() # Conceptual
+
+    _save_content_asset_to_db(asset)
+
+    parent_task = _get_task_from_db(asset.get("task_id"))
+    task_title = parent_task.get("title", asset.get("task_id")) if parent_task else asset.get("task_id")
+
+    # Conceptual Notifications:
+    # Notify asset assignee
+    if asset.get('assignee_id') and asset.get('assignee_id') != current_user_id:
+        _notify_user(
+            asset['assignee_id'],
+            f"Your submitted content asset '{asset.get('name', content_asset_id)}' for task '{task_title}' has been approved."
+        )
+    # Notify parent task's reporter (if different from current user and asset assignee)
+    if parent_task and parent_task.get('reporter_id') and \
+       parent_task.get('reporter_id') != current_user_id and \
+       parent_task.get('reporter_id') != asset.get('assignee_id'):
+        _notify_user(
+            parent_task['reporter_id'],
+            f"Content asset '{asset.get('name', content_asset_id)}' for task '{task_title}' has been approved by user {current_user_id}."
+        )
+
+    print(f"ContentAsset {content_asset_id} approved by user {current_user_id}. Status: Approved.")
+
+    # Placeholder for Phase 4: AI Transcription
+    print(f"Conceptual: Trigger AI transcription for asset {content_asset_id}, link: {asset.get('current_content_link')}")
+    # if asset.get('current_content_link'):
+    #    ai_service.trigger_transcription(asset['current_content_link'], content_asset_id)
+
+    return asset
 
 def request_changes_on_content_asset(content_asset_id, reviewer_id, feedback_comment_text, requesting_user_context=None):
     """
@@ -635,8 +725,53 @@ def request_changes_on_content_asset(content_asset_id, reviewer_id, feedback_com
     #    (This might need a new add_comment_to_content_asset function or refinement of add_comment_to_task)
     # 7. Save ContentAsset.
     # 8. Notify the ContentAsset's assignee.
-    print(f"Conceptual: request_changes_on_content_asset for asset {content_asset_id}")
-    pass
+
+    current_user_id = reviewer_id # The user performing the action IS the reviewer_id
+
+    asset = _get_content_asset_from_db(content_asset_id)
+    if not asset:
+        raise ValueError(f"ContentAsset with ID {content_asset_id} not found.")
+
+    # Permission Check: current_user_id must be the asset['reviewer_id']
+    if asset.get("reviewer_id") != current_user_id:
+        print(f"User {current_user_id} is not the designated reviewer for content asset {content_asset_id} (actual: {asset.get('reviewer_id')}).")
+        raise PermissionError(f"User {current_user_id} is not the designated reviewer for content asset {content_asset_id}.")
+
+    if not _check_permission(current_user_id, "request_changes_on_content_asset", {"content_asset_id": content_asset_id, "asset_reviewer_id": asset.get("reviewer_id")}):
+        print(f"User {current_user_id} does not have permission to request changes for content asset {content_asset_id}.")
+        raise PermissionError(f"User {current_user_id} cannot request changes for content asset {content_asset_id}.")
+
+    if asset.get("content_status") != "PendingReview":
+        raise ValueError(f"ContentAsset {content_asset_id} is in status '{asset.get('content_status')}', cannot request changes. Expected 'PendingReview'.")
+
+    if not feedback_comment_text or not feedback_comment_text.strip():
+        raise ValueError("Feedback comment text must be provided when requesting changes.")
+
+    asset['content_status'] = "ChangesRequested"
+    asset['last_feedback_summary'] = feedback_comment_text[:255] # Store a summary
+    # asset['current_content_link'] = None # Optionally clear the current_content_link, or leave as is for reference
+    # asset['version_number'] = (asset.get('version_number', 0) or 0) + 1 # Increment version for the next iteration
+
+    # Conceptually add the full feedback as a comment.
+    # This would ideally link to the ContentAsset itself if comments can be per-asset,
+    # or fall back to task-level comments if that's the model.
+    parent_task_id = asset.get("task_id")
+    print(f"Conceptual: Calling add_comment_to_task(task_id={parent_task_id}, user_id={current_user_id}, text='Feedback on asset {content_asset_id} ({asset.get('name')}): {feedback_comment_text}')")
+    # add_comment_to_task(parent_task_id, current_user_id, f"Feedback on asset {asset.get('name', content_asset_id)}: {feedback_comment_text}", requesting_user_context)
+
+    _save_content_asset_to_db(asset)
+
+    # Conceptual Notification to the asset's assignee
+    if asset.get('assignee_id'):
+        parent_task = _get_task_from_db(parent_task_id)
+        task_title = parent_task.get("title", parent_task_id) if parent_task else parent_task_id
+        _notify_user(
+            asset['assignee_id'],
+            f"Changes have been requested by user {current_user_id} for content asset '{asset.get('name', content_asset_id)}' on task '{task_title}'. Feedback: {feedback_comment_text}"
+        )
+
+    print(f"Changes requested for content asset {content_asset_id} by user {current_user_id}. Status: ChangesRequested.")
+    return asset
 
 # Note: The original upload_raw_content, submit_for_review, approve_content,
 # and request_changes_on_content functions that operated directly on Task fields
@@ -651,8 +786,36 @@ def request_changes_on_content_asset(content_asset_id, reviewer_id, feedback_com
 
 # --- Mock/Conceptual Helper Functions (for illustration purposes) ---
 
-_MOCK_CONTENT_ASSET_DB = []
-_NEXT_CONTENT_ASSET_ID = 1
+_MOCK_CONTENT_ASSET_DB = [
+    {
+        "id": 1, "task_id": 1, "name": "Alpha Video - Draft 1", "asset_type": "video",
+        "content_status": "EditingInProgress", "version_number": 1,
+        "raw_content_link": "http://example.com/raw/alpha_v1",
+        "source_document_link": "http://example.com/script/alpha",
+        "current_content_link": "http://example.com/edit/alpha_v1_draft1",
+        "published_url": None,
+        "assignee_id": 101, "reviewer_id": 102, "last_feedback_summary": None
+    },
+    {
+        "id": 2, "task_id": 1, "name": "Alpha Video - Script", "asset_type": "script",
+        "content_status": "Approved", "version_number": 1,
+        "raw_content_link": None,
+        "source_document_link": None,
+        "current_content_link": "http://example.com/script/alpha_final",
+        "published_url": None,
+        "assignee_id": 201, "reviewer_id": 102, "last_feedback_summary": None
+    },
+    {
+        "id": 3, "task_id": 3, "name": "Gamma Presentation - Review Copy", "asset_type": "presentation",
+        "content_status": "PendingReview", "version_number": 2,
+        "raw_content_link": "http://example.com/raw/gamma_v2",
+        "source_document_link": "http://example.com/brief/gamma",
+        "current_content_link": "http://example.com/edit/gamma_v2_review",
+        "published_url": None,
+        "assignee_id": 101, "reviewer_id": 102, "last_feedback_summary": "Needs more pizzazz on slide 5."
+    }
+]
+_NEXT_CONTENT_ASSET_ID = 4 # Start next ID after the manually added ones
 
 def _get_next_content_asset_id():
     global _NEXT_CONTENT_ASSET_ID
@@ -805,6 +968,31 @@ def _check_permission(user_id, action, task_object):
         # task_object is {"content_asset_id": content_asset_id, "task_id": asset.get("task_id"), "asset_assignee_id": asset.get("assignee_id") }
         # Example: User might need to be the asset's assignee or task manager.
         print(f"MockAuth: Allowing 'update_content_asset' for user {user_id} on asset {task_object.get('content_asset_id', 'Unknown')}.")
+        return True
+    elif action == "submit_content_asset_for_review":
+        # task_object is {"content_asset_id": id, "asset_assignee_id": asset.get("assignee_id")}
+        # Example: Only asset's assignee can submit.
+        if task_object and task_object.get('asset_assignee_id') == user_id:
+            print(f"MockAuth: User {user_id} IS the assignee for asset {task_object.get('content_asset_id')}. Allowing '{action}'.")
+            return True
+        # Simplified for mock - allow if no specific assignee check, or make it stricter
+        print(f"MockAuth: Allowing '{action}' for user {user_id} on asset {task_object.get('content_asset_id', 'Unknown')}.")
+        return True
+    elif action == "approve_content_asset":
+        # task_object is {"content_asset_id": id, "asset_reviewer_id": asset.get("reviewer_id")}
+        # Example: Only asset's reviewer can approve.
+        if task_object and task_object.get('asset_reviewer_id') == user_id:
+            print(f"MockAuth: User {user_id} IS the reviewer for asset {task_object.get('content_asset_id')}. Allowing '{action}'.")
+            return True
+        print(f"MockAuth: Allowing '{action}' for user {user_id} on asset {task_object.get('content_asset_id', 'Unknown')}.")
+        return True
+    elif action == "request_changes_on_content_asset":
+        # task_object is {"content_asset_id": id, "asset_reviewer_id": asset.get("reviewer_id")}
+        # Example: Only asset's reviewer can request changes.
+        if task_object and task_object.get('asset_reviewer_id') == user_id:
+            print(f"MockAuth: User {user_id} IS the reviewer for asset {task_object.get('content_asset_id')}. Allowing '{action}'.")
+            return True
+        print(f"MockAuth: Allowing '{action}' for user {user_id} on asset {task_object.get('content_asset_id', 'Unknown')}.")
         return True
 
     print(f"MockAuth: Defaulting to TRUE for action '{action}' for user {user_id} on context {task_object if task_object else 'N/A'}.") # Generalised context object name
