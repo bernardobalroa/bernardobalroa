@@ -560,7 +560,7 @@ def create_content_asset(task_id, user_id, asset_type, name=None, raw_content_li
     # 5. Return new ContentAsset object.
     return new_asset
 
-def update_content_asset_links(content_asset_id, user_id, raw_link=None, script_link=None, edited_link=None, requesting_user_context=None):
+def update_content_asset_links(content_asset_id, user_id, raw_link=None, source_document_link=None, edited_link=None, requesting_user_context=None):
     """
     Updates links for a specific content asset. Could set content_status to 'RawUploaded' or 'EditingInProgress'.
     """
@@ -781,19 +781,33 @@ def _check_permission(user_id, action, task_object):
         return True
     elif action == "delete_task":
         # Example: User might need to be reporter or manager/admin.
+        # task_object is the task itself.
         print(f"MockAuth: Allowing 'delete_task' for user {user_id} on task {task_object.get('id', 'Unknown')}.")
         return True
     elif action == "list_comments": # Could reuse 'get_task' permission logic
+        # task_object is permission_context from list_comments_for_task
         print(f"MockAuth: Allowing 'list_comments' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
         return True
     elif action == "add_attachment":
+        # task_object is {"task_id": task_id}
         print(f"MockAuth: Allowing 'add_attachment' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
         return True
     elif action == "list_attachments": # Could reuse 'get_task' permission logic
+        # task_object is permission_context from list_attachments_for_task
         print(f"MockAuth: Allowing 'list_attachments' for user {user_id} on task {task_object.get('task_id', 'Unknown')}.")
         return True
+    elif action == "create_content_asset":
+        # task_object is {"task_id": task_id, "task_client_id": parent_task.get("client_id")}
+        # Example: User might need to be related to the task or have specific content creation role.
+        print(f"MockAuth: Allowing 'create_content_asset' for user {user_id} for task {task_object.get('task_id', 'Unknown')}.")
+        return True
+    elif action == "update_content_asset":
+        # task_object is {"content_asset_id": content_asset_id, "task_id": asset.get("task_id"), "asset_assignee_id": asset.get("assignee_id") }
+        # Example: User might need to be the asset's assignee or task manager.
+        print(f"MockAuth: Allowing 'update_content_asset' for user {user_id} on asset {task_object.get('content_asset_id', 'Unknown')}.")
+        return True
 
-    print(f"MockAuth: Defaulting to TRUE for action '{action}' for user {user_id} on task {task_object.get('id', 'Unknown') if isinstance(task_object, dict) else 'N/A'}.")
+    print(f"MockAuth: Defaulting to TRUE for action '{action}' for user {user_id} on context {task_object if task_object else 'N/A'}.") # Generalised context object name
     return True # Default to allow for other actions in mock
 
 
